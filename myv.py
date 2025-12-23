@@ -12,16 +12,29 @@ def print_grid_from_doc(url: str):
     # Init
     coordinates: List[Tuple[int, int, str]] = []
     
-    # Parse html (iterate through <tbody>)
+    # Parse html (iterate through table rows)
     soup = BeautifulSoup(content, 'html.parser')
-    tbody = soup.find(id='tbody')
-    for row in tbody.find_all('tr'):
+    table = soup.find('table')
+    if not table:
+        print("No table found in document")
+        return
+
+    rows = table.find_all('tr')
+    # Skip the header row (first row)
+    for row in rows[1:]:
         cells = row.find_all('td')
         if len(cells) >= 3:
-            x = int(cells[0].text)
-            y = int(cells[1].text)
-            char = cells[2].text
-            coordinates.append((x, y, char))
+            # Extract text from span elements within the cells
+            x_text = cells[0].find('span')
+            print(x_text)
+            char_text = cells[1].find('span')
+            y_text = cells[2].find('span')
+
+            if x_text and char_text and y_text:
+                x = int(x_text.get_text(strip=True))
+                char = char_text.get_text(strip=True)
+                y = int(y_text.get_text(strip=True))
+                coordinates.append((x, y, char))
 
     if not coordinates:
         print("No valid coordinates found in document")
@@ -29,6 +42,7 @@ def print_grid_from_doc(url: str):
     
     # Find the dimensions of the grid
     max_x = max(coord[0] for coord in coordinates)
+    print(max_x)
     max_y = max(coord[1] for coord in coordinates)
     
     # Create a 2D grid filled with spaces
