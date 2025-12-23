@@ -1,0 +1,4 @@
+# The GraphQL endpoint URL for the GRID API
+GRAPHQL_ENDPOINT=https://api.grid.gg/graphql
+
+API_KEY=your_api_key_here
