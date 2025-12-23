@@ -26,7 +26,6 @@ def print_grid_from_doc(url: str):
         if len(cells) >= 3:
             # Extract text from span elements within the cells
             x_text = cells[0].find('span')
-            print(x_text)
             char_text = cells[1].find('span')
             y_text = cells[2].find('span')
 
@@ -42,7 +41,6 @@ def print_grid_from_doc(url: str):
     
     # Find the dimensions of the grid
     max_x = max(coord[0] for coord in coordinates)
-    print(max_x)
     max_y = max(coord[1] for coord in coordinates)
     
     # Create a 2D grid filled with spaces
