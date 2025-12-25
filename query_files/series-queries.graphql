@@ -1,0 +1,30 @@
+query GetLiveDotaSeriesState {
+  seriesState(id: "2") {
+    valid
+    updatedAt
+    format
+    started
+    finished
+    teams {
+      name
+      won
+    }
+    games(filter: { started: true, finished: false }) {
+      sequenceNumber
+      teams {
+        name
+        players {
+          name
+          kills
+          deaths
+          netWorth
+          money
+          position {
+            x
+            y
+          }
+        }
+      }
+    }
+  }
+}

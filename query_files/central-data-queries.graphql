@@ -1,0 +1,181 @@
+query GetTournament {
+  tournament(id: "1") {
+    ...tournamentFields
+  }
+}
+query GetTournaments {
+  tournaments {
+    pageInfo {
+      hasPreviousPage
+      hasNextPage
+      startCursor
+      endCursor
+    }
+    totalCount
+    edges {
+      cursor
+      node {
+        ...tournamentFields
+      }
+    }
+  }
+}
+fragment tournamentFields on Tournament {
+  id
+  name
+  nameShortened
+}
+
+query GetCsgoLoopfeedSeries {
+  series(id: "1") {
+    ...seriesFields
+  }
+}
+query GetAllSeriesInNext24Hours {
+  allSeries(
+    filter:{
+      startTimeScheduled:{
+        gte: "2024-04-24T15:00:07+02:00"
+        lte: "2024-04-25T15:00:07+02:00"
+      }
+    }
+    orderBy: StartTimeScheduled
+  ) {
+    totalCount,
+    pageInfo{
+      hasPreviousPage
+      hasNextPage
+      startCursor
+      endCursor
+    }
+    edges{
+      cursor
+      node{
+        ...seriesFields
+      }
+    }
+  }
+}
+fragment seriesFields on Series {
+  id
+  title {
+    nameShortened
+  }
+  tournament {
+    nameShortened
+  }
+  startTimeScheduled
+  format {
+    name
+    nameShortened
+  }
+  teams {
+    baseInfo {
+      name
+    }
+    scoreAdvantage
+  }
+}
+query SeriesFormats {
+  seriesFormats {
+    id
+    name
+    nameShortened 
+  }
+}
+
+query GetOrganization {
+  organization(id: "1") {
+    ...organizationFields
+  }
+}
+query GetOrganizations {
+  organizations(first: 5) {
+    edges {
+      node {
+        ...organizationFields
+      }
+    }
+  }
+}
+fragment organizationFields on Organization {
+  id
+  name
+  teams {
+    name
+  }
+}
+
+query GetTeam {
+  team(id: "1") {
+    ...teamFields
+  }
+}
+query GetTeams {
+  teams(first: 5, after: null) {
+    totalCount
+    pageInfo {
+      hasPreviousPage
+      hasNextPage
+      startCursor
+      endCursor
+    }
+    totalCount
+    edges {
+      cursor
+      node {
+        ...teamFields
+      }
+    }
+  }
+}
+fragment teamFields on Team {
+  id
+  name
+  colorPrimary
+  colorSecondary
+  logoUrl
+  externalLinks {
+    dataProvider {
+      name
+    }
+    externalEntity {
+      id
+    }
+  }
+}
+
+query GetPlayer {
+  player(id: "1") {
+    ...playerFields
+  }
+}
+query GetPlayers {
+  players(first: 5) {
+    edges {
+      node {
+        ...playerFields
+      }
+    }
+  }
+}
+query GetTeamRoster {
+  players(filter: {teamIdFilter: {id: "1"}}) {
+    edges {
+      node {
+        ...playerFields
+      }
+    }
+    pageInfo {
+      hasNextPage
+      hasPreviousPage
+    }
+  }
+}
+fragment playerFields on Player {
+  id
+  nickname
+  title {
+    name
+  }
+}
