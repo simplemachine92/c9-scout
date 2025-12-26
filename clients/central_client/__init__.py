@@ -59,7 +59,12 @@ from .get_players import (
     GetPlayersPlayersEdges,
     GetPlayersPlayersEdgesNode,
 )
-from .get_team import GetTeam, GetTeamTeam
+from .get_team_by_name import (
+    GetTeamByName,
+    GetTeamByNameTeams,
+    GetTeamByNameTeamsEdges,
+    GetTeamByNameTeamsEdgesNode,
+)
 from .get_team_roster import (
     GetTeamRoster,
     GetTeamRosterPlayers,
@@ -139,13 +144,15 @@ __all__ = [
     "GetPlayersPlayers",
     "GetPlayersPlayersEdges",
     "GetPlayersPlayersEdgesNode",
-    "GetTeam",
+    "GetTeamByName",
+    "GetTeamByNameTeams",
+    "GetTeamByNameTeamsEdges",
+    "GetTeamByNameTeamsEdgesNode",
     "GetTeamRoster",
     "GetTeamRosterPlayers",
     "GetTeamRosterPlayersEdges",
     "GetTeamRosterPlayersEdgesNode",
     "GetTeamRosterPlayersPageInfo",
-    "GetTeamTeam",
     "GetTeams",
     "GetTeamsTeams",
     "GetTeamsTeamsEdges",
