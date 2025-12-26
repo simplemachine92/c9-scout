@@ -106,8 +106,19 @@ fragment organizationFields on Organization {
   }
 }
 
-query GetTeamByName($teamName: String) {
+query GetTeamByExactName($teamName: String) {
   teams(filter: {name: {equals: $teamName}}) {
+    edges {
+      cursor
+      node {
+        ...teamFields
+      }
+    }
+  }
+}
+
+query GetTeamBySimilarName($teamName: String) {
+  teams(filter: {name: {contains: $teamName}}) {
     edges {
       cursor
       node {

@@ -59,11 +59,17 @@ from .get_players import (
     GetPlayersPlayersEdges,
     GetPlayersPlayersEdgesNode,
 )
-from .get_team_by_name import (
-    GetTeamByName,
-    GetTeamByNameTeams,
-    GetTeamByNameTeamsEdges,
-    GetTeamByNameTeamsEdgesNode,
+from .get_team_by_exact_name import (
+    GetTeamByExactName,
+    GetTeamByExactNameTeams,
+    GetTeamByExactNameTeamsEdges,
+    GetTeamByExactNameTeamsEdgesNode,
+)
+from .get_team_by_similar_name import (
+    GetTeamBySimilarName,
+    GetTeamBySimilarNameTeams,
+    GetTeamBySimilarNameTeamsEdges,
+    GetTeamBySimilarNameTeamsEdgesNode,
 )
 from .get_team_roster import (
     GetTeamRoster,
@@ -144,10 +150,14 @@ __all__ = [
     "GetPlayersPlayers",
     "GetPlayersPlayersEdges",
     "GetPlayersPlayersEdgesNode",
-    "GetTeamByName",
-    "GetTeamByNameTeams",
-    "GetTeamByNameTeamsEdges",
-    "GetTeamByNameTeamsEdgesNode",
+    "GetTeamByExactName",
+    "GetTeamByExactNameTeams",
+    "GetTeamByExactNameTeamsEdges",
+    "GetTeamByExactNameTeamsEdgesNode",
+    "GetTeamBySimilarName",
+    "GetTeamBySimilarNameTeams",
+    "GetTeamBySimilarNameTeamsEdges",
+    "GetTeamBySimilarNameTeamsEdgesNode",
     "GetTeamRoster",
     "GetTeamRosterPlayers",
     "GetTeamRosterPlayersEdges",

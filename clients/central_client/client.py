@@ -11,7 +11,8 @@ from .get_organization import GetOrganization
 from .get_organizations import GetOrganizations
 from .get_player import GetPlayer
 from .get_players import GetPlayers
-from .get_team_by_name import GetTeamByName
+from .get_team_by_exact_name import GetTeamByExactName
+from .get_team_by_similar_name import GetTeamBySimilarName
 from .get_team_roster import GetTeamRoster
 from .get_teams import GetTeams
 from .get_tournament import GetTournament
@@ -257,12 +258,12 @@ class CentralDbClient(AsyncBaseClient):
         data = self.get_data(response)
         return GetOrganizations.model_validate(data)
 
-    async def get_team_by_name(
+    async def get_team_by_exact_name(
         self, team_name: Union[Optional[str], UnsetType] = UNSET, **kwargs: Any
-    ) -> GetTeamByName:
+    ) -> GetTeamByExactName:
         query = gql(
             """
-            query GetTeamByName($teamName: String) {
+            query GetTeamByExactName($teamName: String) {
               teams(filter: {name: {equals: $teamName}}) {
                 edges {
                   cursor
@@ -292,10 +293,56 @@ class CentralDbClient(AsyncBaseClient):
         )
         variables: dict[str, object] = {"teamName": team_name}
         response = await self.execute(
-            query=query, operation_name="GetTeamByName", variables=variables, **kwargs
+            query=query,
+            operation_name="GetTeamByExactName",
+            variables=variables,
+            **kwargs
         )
         data = self.get_data(response)
-        return GetTeamByName.model_validate(data)
+        return GetTeamByExactName.model_validate(data)
+
+    async def get_team_by_similar_name(
+        self, team_name: Union[Optional[str], UnsetType] = UNSET, **kwargs: Any
+    ) -> GetTeamBySimilarName:
+        query = gql(
+            """
+            query GetTeamBySimilarName($teamName: String) {
+              teams(filter: {name: {contains: $teamName}}) {
+                edges {
+                  cursor
+                  node {
+                    ...teamFields
+                  }
+                }
+              }
+            }
+
+            fragment teamFields on Team {
+              id
+              name
+              colorPrimary
+              colorSecondary
+              logoUrl
+              externalLinks {
+                dataProvider {
+                  name
+                }
+                externalEntity {
+                  id
+                }
+              }
+            }
+            """
+        )
+        variables: dict[str, object] = {"teamName": team_name}
+        response = await self.execute(
+            query=query,
+            operation_name="GetTeamBySimilarName",
+            variables=variables,
+            **kwargs
+        )
+        data = self.get_data(response)
+        return GetTeamBySimilarName.model_validate(data)
 
     async def get_teams(self, **kwargs: Any) -> GetTeams:
         query = gql(
