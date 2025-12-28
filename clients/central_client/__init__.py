@@ -44,6 +44,13 @@ from .get_all_series_in_next_24_hours import (
     GetAllSeriesInNext24HoursAllSeriesEdgesNode,
     GetAllSeriesInNext24HoursAllSeriesPageInfo,
 )
+from .get_all_series_since_date import (
+    GetAllSeriesSinceDate,
+    GetAllSeriesSinceDateAllSeries,
+    GetAllSeriesSinceDateAllSeriesEdges,
+    GetAllSeriesSinceDateAllSeriesEdgesNode,
+    GetAllSeriesSinceDateAllSeriesPageInfo,
+)
 from .get_csgo_loopfeed_series import GetCsgoLoopfeedSeries, GetCsgoLoopfeedSeriesSeries
 from .get_organization import GetOrganization, GetOrganizationOrganization
 from .get_organizations import (
@@ -136,6 +143,11 @@ __all__ = [
     "GetAllSeriesInNext24HoursAllSeriesEdges",
     "GetAllSeriesInNext24HoursAllSeriesEdgesNode",
     "GetAllSeriesInNext24HoursAllSeriesPageInfo",
+    "GetAllSeriesSinceDate",
+    "GetAllSeriesSinceDateAllSeries",
+    "GetAllSeriesSinceDateAllSeriesEdges",
+    "GetAllSeriesSinceDateAllSeriesEdgesNode",
+    "GetAllSeriesSinceDateAllSeriesPageInfo",
     "GetCsgoLoopfeedSeries",
     "GetCsgoLoopfeedSeriesSeries",
     "GetOrganization",

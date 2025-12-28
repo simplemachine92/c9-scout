@@ -56,6 +56,32 @@ query GetAllSeriesInNext24Hours {
     }
   }
 }
+
+query GetAllSeriesSinceDate($DateTime: String) {
+  allSeries(
+    filter:{
+      startTimeScheduled:{
+        gte: $DateTime
+      }
+    }
+    orderBy: StartTimeScheduled
+  ) {
+    totalCount,
+    pageInfo{
+      hasPreviousPage
+      hasNextPage
+      startCursor
+      endCursor
+    }
+    edges{
+      cursor
+      node{
+        ...seriesFields
+      }
+    }
+  }
+}
+
 fragment seriesFields on Series {
   id
   title {

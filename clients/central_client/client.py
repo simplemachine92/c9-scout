@@ -6,6 +6,7 @@ from typing import Any, Optional, Union
 from .async_base_client import AsyncBaseClient
 from .base_model import UNSET, UnsetType
 from .get_all_series_in_next_24_hours import GetAllSeriesInNext24Hours
+from .get_all_series_since_date import GetAllSeriesSinceDate
 from .get_csgo_loopfeed_series import GetCsgoLoopfeedSeries
 from .get_organization import GetOrganization
 from .get_organizations import GetOrganizations
@@ -181,6 +182,64 @@ class CentralDbClient(AsyncBaseClient):
         )
         data = self.get_data(response)
         return GetAllSeriesInNext24Hours.model_validate(data)
+
+    async def get_all_series_since_date(
+        self, date_time: Union[Optional[str], UnsetType] = UNSET, **kwargs: Any
+    ) -> GetAllSeriesSinceDate:
+        query = gql(
+            """
+            query GetAllSeriesSinceDate($DateTime: String) {
+              allSeries(
+                filter: {startTimeScheduled: {gte: $DateTime}}
+                orderBy: StartTimeScheduled
+              ) {
+                totalCount
+                pageInfo {
+                  hasPreviousPage
+                  hasNextPage
+                  startCursor
+                  endCursor
+                }
+                edges {
+                  cursor
+                  node {
+                    ...seriesFields
+                  }
+                }
+              }
+            }
+
+            fragment seriesFields on Series {
+              id
+              title {
+                nameShortened
+              }
+              tournament {
+                nameShortened
+              }
+              startTimeScheduled
+              format {
+                name
+                nameShortened
+              }
+              teams {
+                baseInfo {
+                  name
+                }
+                scoreAdvantage
+              }
+            }
+            """
+        )
+        variables: dict[str, object] = {"DateTime": date_time}
+        response = await self.execute(
+            query=query,
+            operation_name="GetAllSeriesSinceDate",
+            variables=variables,
+            **kwargs
+        )
+        data = self.get_data(response)
+        return GetAllSeriesSinceDate.model_validate(data)
 
     async def series_formats(self, **kwargs: Any) -> SeriesFormats:
         query = gql(
