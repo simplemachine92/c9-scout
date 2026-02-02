@@ -337,6 +337,8 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     player_damage_dealt = defaultdict(lambda: {'total_damage_dealt': 0, 'rounds': 0})
     # player_name -> {'head': int, 'body': int, 'leg': int} damage by target from segments
     player_damage_by_target = defaultdict(lambda: {'head': 0, 'body': 0, 'leg': 0})
+    # player_name -> first_blood_count (number of rounds they got first kill)
+    player_first_bloods = defaultdict(int)
 
     for series in _series_details:
         # Only analyze Valorant series
@@ -430,6 +432,9 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                                     amount = getattr(t, 'damage_amount', 0) or 0
                                     if target_name in ('head', 'body', 'leg'):
                                         player_damage_by_target[player_name][target_name] += amount
+                                # Track first bloods (firstKill boolean per segment)
+                                if getattr(player, 'first_kill', False):
+                                    player_first_bloods[player_name] += 1
 
     # Calculate preferred weapons and side stats for each player
     player_analysis = {}
@@ -487,6 +492,7 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                 'avg_damage_dealt_per_round': avg_damage_dealt_per_round,
                 'headshot_ratio': headshot_ratio,
                 'target_pct': target_pct,
+                'first_bloods': player_first_bloods[player_name],
             }
 
     return {
@@ -799,7 +805,7 @@ if st.session_state.selected_team:
                                     st.caption(f"Total: {row['total_kills']} kills, {row['total_damage']} damage over {row['total_rounds']} rounds")
                             st.divider()
 
-                        # Weapon Analysis Section
+                        # Player Analysis Section
                         if weapon_analysis['player_analysis']:
                             st.subheader("Player Preferences")
 
@@ -826,6 +832,7 @@ if st.session_state.selected_team:
 
                                 with col_b:
                                     st.metric("Total Kills", stats['total_kills'])
+                                    st.metric("First Bloods", stats.get('first_bloods', 0))
                                     st.metric("Headshot ratio (damage)", f"{stats.get('headshot_ratio', 0):.1f}%")
                                     st.write("**Top Weapons:**")
                                     for weapon, kills in list(stats['weapon_breakdown'].items())[:3]:
