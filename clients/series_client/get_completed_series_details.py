@@ -84,6 +84,7 @@ class GetCompletedSeriesDetailsSeriesStateGamesSegmentsTeams(BaseModel):
         "SegmentTeamStateValorant",
     ] = Field(alias="__typename")
     name: str
+    side: str
     players: list[
         Annotated[
             Union[

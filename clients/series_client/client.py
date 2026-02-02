@@ -22,9 +22,6 @@ class SeriesClient(AsyncBaseClient):
                 title {
                   nameShortened
                 }
-                title {
-                  nameShortened
-                }
                 draftActions {
                   sequenceNumber
                   drafter {
@@ -52,6 +49,7 @@ class SeriesClient(AsyncBaseClient):
                     teams {
                       __typename
                       name
+                      side
                       players {
                         __typename
                         ... on SegmentPlayerStateValorant {

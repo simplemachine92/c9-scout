@@ -28,6 +28,7 @@ query GetCompletedSeriesDetails($id: ID!) {
         sequenceNumber
         teams {
           name
+          side
           players {
             ... on SegmentPlayerStateValorant {
               name

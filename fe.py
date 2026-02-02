@@ -24,6 +24,167 @@ def get_series_client():
         headers={"x-api-key": API_KEY}
     )
 
+# Cached analysis functions (defined at module level for proper caching)
+@st.cache_data
+def analyze_map_preferences(_series_details, _target_team_id, _months_back):
+    """Analyze map ban/pick preferences from draft actions for target team"""
+    from collections import Counter
+
+    map_bans = Counter()
+    map_picks = Counter()
+    total_actions = 0
+
+    for series in _series_details:
+        # Only analyze Valorant series
+        if (not series.series_state or
+            not hasattr(series.series_state, 'title') or
+            not series.series_state.title or
+            not hasattr(series.series_state.title, 'name_shortened') or
+            series.series_state.title.name_shortened != "val"):
+            continue
+
+        if not hasattr(series.series_state, 'draft_actions'):
+            continue
+
+        for draft_action in series.series_state.draft_actions:
+            # Check if this action was by the target team
+            if (hasattr(draft_action, 'drafter') and draft_action.drafter and
+                hasattr(draft_action.drafter, 'id') and
+                str(draft_action.drafter.id) == str(_target_team_id)):
+
+                total_actions += 1
+
+                if hasattr(draft_action, 'type') and hasattr(draft_action, 'draftable'):
+                    action_type = draft_action.type
+                    map_name = draft_action.draftable.name if hasattr(draft_action.draftable, 'name') else None
+
+                    if map_name:
+                        if action_type == "ban":
+                            map_bans[map_name] += 1
+                        elif action_type == "pick":
+                            map_picks[map_name] += 1
+
+    # Calculate preferences
+    most_banned = map_bans.most_common(5) if map_bans else []
+    most_picked = map_picks.most_common(5) if map_picks else []
+    least_banned = list(reversed(map_bans.most_common()))[:5] if map_bans else []
+
+    return {
+        'total_actions': total_actions,
+        'map_bans': dict(map_bans),
+        'map_picks': dict(map_picks),
+        'most_banned_maps': most_banned,
+        'most_picked_maps': most_picked,
+        'least_banned_maps': least_banned,
+        'total_bans': sum(map_bans.values()),
+        'total_picks': sum(map_picks.values())
+    }
+
+@st.cache_data
+def analyze_player_weapons(_series_details, _target_team_name, _months_back):
+    """Analyze player weapon preferences from detailed series data for target team only"""
+    from collections import defaultdict, Counter
+
+    player_weapons = defaultdict(Counter)  # player_name -> weapon -> total_kills
+    player_series_count = defaultdict(int)  # player_name -> series_played
+
+    for series in _series_details:
+        # Only analyze Valorant series
+        if (not series.series_state or
+            not hasattr(series.series_state, 'title') or
+            not series.series_state.title or
+            not hasattr(series.series_state.title, 'name_shortened') or
+            series.series_state.title.name_shortened != "val"):
+            continue
+
+        if not series.series_state.games:
+            continue
+
+        # First pass: collect all players from target team in this series
+        series_players = set()
+        for game in series.series_state.games:
+            # Check game-level teams
+            for team in game.teams:
+                if hasattr(team, 'name') and (
+                    team.name == _target_team_name or
+                    team.name.startswith(_target_team_name) or
+                    _target_team_name in team.name
+                ):
+                    for player in team.players:
+                        series_players.add(player.name)
+
+            # Check segment-level teams
+            for segment in game.segments:
+                for team in segment.teams:
+                    if hasattr(team, 'name') and (
+                        team.name == _target_team_name or
+                        team.name.startswith(_target_team_name) or
+                        _target_team_name in team.name
+                    ):
+                        for player in team.players:
+                            series_players.add(player.name)
+
+        # Count this series for all players who participated
+        for player_name in series_players:
+            player_series_count[player_name] += 1
+
+        # Second pass: collect weapon data (only for players we know participated)
+        for game in series.series_state.games:
+            # Get weapon data from game-level player stats (more reliable)
+            for team in game.teams:
+                if hasattr(team, 'name') and (
+                    team.name == _target_team_name or
+                    team.name.startswith(_target_team_name) or
+                    _target_team_name in team.name
+                ):
+                    for player in team.players:
+                        player_name = player.name
+                        # Only collect weapon data for players who participated in this series
+                        if player_name in series_players:
+                            if hasattr(player, 'weapon_kills'):
+                                for weapon_kill in player.weapon_kills:
+                                    if weapon_kill.weapon_name and weapon_kill.count:
+                                        player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
+
+            # Also check segment-level data for additional weapon info
+            for segment in game.segments:
+                for team in segment.teams:
+                    if hasattr(team, 'name') and (
+                        team.name == _target_team_name or
+                        team.name.startswith(_target_team_name) or
+                        _target_team_name in team.name
+                    ):
+                        for player in team.players:
+                            player_name = player.name
+                            # Only collect weapon data for players who participated in this series
+                            if player_name in series_players:
+                                if hasattr(player, 'weapon_kills'):
+                                    for weapon_kill in player.weapon_kills:
+                                        if weapon_kill.weapon_name and weapon_kill.weapon_name:
+                                            player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
+
+    # Calculate preferred weapons for each player
+    player_analysis = {}
+    for player_name, weapon_counts in player_weapons.items():
+        total_kills = sum(weapon_counts.values())
+        if total_kills > 0:
+            # Get top 3 weapons
+            top_weapons = weapon_counts.most_common(3)
+
+            player_analysis[player_name] = {
+                'series_played': player_series_count[player_name],
+                'total_kills': total_kills,
+                'preferred_weapon': top_weapons[0][0] if top_weapons else None,
+                'preferred_weapon_kills': top_weapons[0][1] if top_weapons else 0,
+                'weapon_breakdown': dict(top_weapons),
+                'all_weapons': dict(weapon_counts)
+            }
+
+    return {
+        'total_players_analyzed': len(player_analysis),
+        'player_analysis': player_analysis
+    }
+
 async def fetch_team(team_name: str):
     """Fetch team data by exact name"""
     client = get_central_client()
@@ -186,175 +347,16 @@ if st.session_state.selected_team:
                 st.session_state.series_list = None
                 st.error("No series data available.")
 
-    # Search series button
-    if st.button("Scout Team"):
+    # Scout team button
+    if st.button("Scout Team", type="primary"):
+        # Clear cached analysis results when starting a new scout
+        analyze_player_weapons.clear()
+        analyze_map_preferences.clear()
         asyncio.run(find_series())
 
     # Analysis Section (appears when we have series data)
     if st.session_state.series_list:
         series_list = st.session_state.series_list
-
-        # Cache map preferences analysis
-        @st.cache_data
-        def analyze_map_preferences(_series_details, _target_team_id):
-            """Analyze map ban/pick preferences from draft actions for target team"""
-            from collections import Counter
-
-            map_bans = Counter()
-            map_picks = Counter()
-            total_actions = 0
-
-            for series in _series_details:
-                # Only analyze Valorant series
-                if (not series.series_state or
-                    not hasattr(series.series_state, 'title') or
-                    not series.series_state.title or
-                    not hasattr(series.series_state.title, 'name_shortened') or
-                    series.series_state.title.name_shortened != "val"):
-                    continue
-
-                if not hasattr(series.series_state, 'draft_actions'):
-                    continue
-
-                for draft_action in series.series_state.draft_actions:
-                    # Check if this action was by the target team
-                    if (hasattr(draft_action, 'drafter') and draft_action.drafter and
-                        hasattr(draft_action.drafter, 'id') and
-                        str(draft_action.drafter.id) == str(_target_team_id)):
-
-                        total_actions += 1
-
-                        if hasattr(draft_action, 'type') and hasattr(draft_action, 'draftable'):
-                            action_type = draft_action.type
-                            map_name = draft_action.draftable.name if hasattr(draft_action.draftable, 'name') else None
-
-                            if map_name:
-                                if action_type == "ban":
-                                    map_bans[map_name] += 1
-                                elif action_type == "pick":
-                                    map_picks[map_name] += 1
-
-            # Calculate preferences
-            most_banned = map_bans.most_common(5) if map_bans else []
-            most_picked = map_picks.most_common(5) if map_picks else []
-            least_banned = list(reversed(map_bans.most_common()))[:5] if map_bans else []
-
-            return {
-                'total_actions': total_actions,
-                'map_bans': dict(map_bans),
-                'map_picks': dict(map_picks),
-                'most_banned_maps': most_banned,
-                'most_picked_maps': most_picked,
-                'least_banned_maps': least_banned,
-                'total_bans': sum(map_bans.values()),
-                'total_picks': sum(map_picks.values())
-            }
-
-        # Cache detailed analysis with player stats
-        @st.cache_data
-        def analyze_player_weapons(_series_details, _target_team_name):
-            """Analyze player weapon preferences from detailed series data for target team only"""
-            from collections import defaultdict, Counter
-
-            player_weapons = defaultdict(Counter)  # player_name -> weapon -> total_kills
-            player_series_count = defaultdict(int)  # player_name -> series_played
-
-            for series in _series_details:
-                # Only analyze Valorant series
-                if (not series.series_state or
-                    not hasattr(series.series_state, 'title') or
-                    not series.series_state.title or
-                    not hasattr(series.series_state.title, 'name_shortened') or
-                    series.series_state.title.name_shortened != "val"):
-                    continue
-
-                if not series.series_state.games:
-                    continue
-
-                # First pass: collect all players from target team in this series
-                series_players = set()
-                for game in series.series_state.games:
-                    # Check game-level teams
-                    for team in game.teams:
-                        if hasattr(team, 'name') and (
-                            team.name == _target_team_name or
-                            team.name.startswith(_target_team_name) or
-                            _target_team_name in team.name
-                        ):
-                            for player in team.players:
-                                series_players.add(player.name)
-
-                    # Check segment-level teams
-                    for segment in game.segments:
-                        for team in segment.teams:
-                            if hasattr(team, 'name') and (
-                                team.name == _target_team_name or
-                                team.name.startswith(_target_team_name) or
-                                _target_team_name in team.name
-                            ):
-                                for player in team.players:
-                                    series_players.add(player.name)
-
-                # Count this series for all players who participated
-                for player_name in series_players:
-                    player_series_count[player_name] += 1
-
-                # Second pass: collect weapon data (only for players we know participated)
-                for game in series.series_state.games:
-                    # Get weapon data from game-level player stats (more reliable)
-                    for team in game.teams:
-                        if hasattr(team, 'name') and (
-                            team.name == _target_team_name or
-                            team.name.startswith(_target_team_name) or
-                            _target_team_name in team.name
-                        ):
-                            for player in team.players:
-                                player_name = player.name
-                                # Only collect weapon data for players who participated in this series
-                                if player_name in series_players:
-                                    if hasattr(player, 'weapon_kills'):
-                                        for weapon_kill in player.weapon_kills:
-                                            if weapon_kill.weapon_name and weapon_kill.count:
-                                                player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
-
-                    # Also check segment-level data for additional weapon info
-                    for segment in game.segments:
-                        for team in segment.teams:
-                            if hasattr(team, 'name') and (
-                                team.name == _target_team_name or
-                                team.name.startswith(_target_team_name) or
-                                _target_team_name in team.name
-                            ):
-                                for player in team.players:
-                                    player_name = player.name
-                                    # Only collect weapon data for players who participated in this series
-                                    if player_name in series_players:
-                                        if hasattr(player, 'weapon_kills'):
-                                            for weapon_kill in player.weapon_kills:
-                                                if weapon_kill.weapon_name and weapon_kill.count:
-                                                    player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
-
-            # Calculate preferred weapons for each player
-            player_analysis = {}
-            for player_name, weapon_counts in player_weapons.items():
-                total_kills = sum(weapon_counts.values())
-                if total_kills > 0:
-                    # Get top 3 weapons
-                    top_weapons = weapon_counts.most_common(3)
-
-                    player_analysis[player_name] = {
-                        'series_played': player_series_count[player_name],
-                        'total_kills': total_kills,
-                        'preferred_weapon': top_weapons[0][0] if top_weapons else None,
-                        'preferred_weapon_kills': top_weapons[0][1] if top_weapons else 0,
-                        'weapon_breakdown': dict(top_weapons),
-                        'all_weapons': dict(weapon_counts)
-                    }
-
-            return {
-                'total_players_analyzed': len(player_analysis),
-                'player_analysis': player_analysis
-            }
 
         # Automatic Weapon Analysis (runs immediately after finding series)
         st.divider()
@@ -367,8 +369,9 @@ if st.session_state.selected_team:
                 detailed_series = asyncio.run(get_series_details(series_ids))  # Analyze all available series
 
                 if detailed_series:
-                    weapon_analysis = analyze_player_weapons(detailed_series, team.name)
-                    map_analysis = analyze_map_preferences(detailed_series, team.id)
+                    # Pass months_back directly as cache parameter
+                    weapon_analysis = analyze_player_weapons(detailed_series, team.name, months_back)
+                    map_analysis = analyze_map_preferences(detailed_series, team.id, months_back)
 
                     # Show team performance analysis
                     if weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0:
