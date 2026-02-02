@@ -244,6 +244,84 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
     result.sort(key=lambda x: (x["avg_kills_per_game"], x["avg_damage_per_round"]), reverse=True)
     return result
 
+ORB_OBJECTIVE_TYPE = "captureUltimateOrb"
+
+@st.cache_data
+def analyze_ultimate_orb_priority(_series_details, _target_team_name, _months_back):
+    """
+    Who's ultimate is being prioritized per map (and per side) based on who captures
+    the ultimate orb. Teams often assign orb to a specific agent (e.g. area denial ult).
+    """
+    from collections import defaultdict, Counter
+
+    # map_name -> character -> count of orb captures
+    map_char_orb = defaultdict(Counter)
+    # map_name -> side -> character -> count (for attacker/defender breakdown)
+    map_side_char_orb = defaultdict(lambda: defaultdict(Counter))
+
+    for series in _series_details:
+        if (not series.series_state or
+            not hasattr(series.series_state, "title") or
+            not series.series_state.title or
+            getattr(series.series_state.title, "name_shortened", None) != "val"):
+            continue
+        if not series.series_state.games:
+            continue
+
+        for game in series.series_state.games:
+            map_name = None
+            if hasattr(game, "map") and game.map and hasattr(game.map, "name"):
+                map_name = game.map.name
+            if not map_name:
+                continue
+
+            # Build player -> character for scouted team from game.teams
+            player_to_char = {}
+            for team in game.teams:
+                if not hasattr(team, "name") or not _is_target_team(team.name, _target_team_name):
+                    continue
+                for p in getattr(team, "players", []) or []:
+                    if hasattr(p, "name") and hasattr(p, "character") and p.character and hasattr(p.character, "name"):
+                        player_to_char[p.name] = p.character.name
+                break
+            if not player_to_char:
+                continue
+
+            for segment in getattr(game, "segments", []) or []:
+                for seg_team in getattr(segment, "teams", []) or []:
+                    if not hasattr(seg_team, "name") or not _is_target_team(seg_team.name, _target_team_name):
+                        continue
+                    side = (getattr(seg_team, "side", None) or "").strip().lower() or "unknown"
+                    for seg_player in getattr(seg_team, "players", []) or []:
+                        pname = getattr(seg_player, "name", None)
+                        if pname is None:
+                            continue
+                        char_name = player_to_char.get(pname)
+                        if not char_name:
+                            continue
+                        for obj in getattr(seg_player, "objectives", []) or []:
+                            if getattr(obj, "type", None) != ORB_OBJECTIVE_TYPE:
+                                continue
+                            count = getattr(obj, "completion_count", 1) or 1
+                            map_char_orb[map_name][char_name] += count
+                            map_side_char_orb[map_name][side][char_name] += count
+                    break
+
+    # Convert to map_name -> list of (character, count) sorted by count desc
+    by_map = {}
+    for map_name, char_counts in map_char_orb.items():
+        by_map[map_name] = char_counts.most_common()
+
+    # Convert to map_name -> side -> list of (character, count)
+    by_map_side = {}
+    for map_name, side_counts in map_side_char_orb.items():
+        by_map_side[map_name] = {
+            side: cnt.most_common()
+            for side, cnt in side_counts.items()
+        }
+
+    return {"by_map": by_map, "by_map_side": by_map_side}
+
 @st.cache_data
 def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     """Analyze player weapon preferences from detailed series data for target team only"""
@@ -558,6 +636,7 @@ if st.session_state.selected_team:
         analyze_map_preferences.clear()
         analyze_map_characters.clear()
         analyze_opponent_character_impact.clear()
+        analyze_ultimate_orb_priority.clear()
         asyncio.run(find_series())
 
     # Analysis Section (appears when we have series data)
@@ -580,9 +659,11 @@ if st.session_state.selected_team:
                     map_analysis = analyze_map_preferences(detailed_series, team.id, months_back)
                     map_characters = analyze_map_characters(detailed_series, team.name, months_back)
                     opponent_impact = analyze_opponent_character_impact(detailed_series, team.name, months_back)
+                    orb_priority = analyze_ultimate_orb_priority(detailed_series, team.name, months_back)
 
                     # Show team performance analysis
-                    if weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0:
+                    if (weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0
+                            or orb_priority["by_map"] or opponent_impact):
                         st.subheader(f"🎯 {team.name} - Performance Analysis")
                         st.info(f"Analyzed {len(detailed_series)} series from the selected time period")
 
@@ -650,6 +731,30 @@ if st.session_state.selected_team:
                                         for char_name, count in chars:
                                             st.write(f"• **{char_name}**: {count}")
 
+                            st.divider()
+
+                        # Ultimate orb priority: who captures the orb per map (and per side)
+                        if orb_priority["by_map"]:
+                            st.subheader("⚡ Ultimate orb priority")
+                            st.caption("Who captures the ultimate orb per map — often the agent whose ult is prioritized (e.g. area denial).")
+                            for map_name in sorted(orb_priority["by_map"].keys()):
+                                chars = orb_priority["by_map"][map_name]
+                                if not chars:
+                                    continue
+                                total_orb = sum(c for _, c in chars)
+                                by_side = orb_priority["by_map_side"].get(map_name) or {}
+                                with st.expander(f"🗺️ **{map_name}** — {total_orb} orb captures"):
+                                    st.write("**Prioritized by captures:**")
+                                    for char_name, count in chars:
+                                        pct = (100 * count / total_orb) if total_orb else 0
+                                        st.write(f"• **{char_name}**: {count} ({pct:.0f}%)")
+                                    if by_side:
+                                        st.write("**By side:**")
+                                        for side in sorted(by_side.keys(), key=lambda s: (0 if s == "attacker" else 1 if s == "defender" else 2)):
+                                            side_list = by_side[side]
+                                            if not side_list:
+                                                continue
+                                            st.write(f"  *{side.title()}*: " + ", ".join(f"**{c}** ({n})" for c, n in side_list[:5]))
                             st.divider()
 
                         # Opponent character impact: which agents to deny (show whenever we have data)
