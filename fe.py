@@ -91,6 +91,8 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     def _side_dict():
         return defaultdict(lambda: {'kills': 0, 'rounds': 0})
     player_kills_by_side = defaultdict(_side_dict)
+    # player_name -> {'total_damage_dealt': int, 'rounds': int} (per-round from segments)
+    player_damage_dealt = defaultdict(lambda: {'total_damage_dealt': 0, 'rounds': 0})
 
     for series in _series_details:
         # Only analyze Valorant series
@@ -174,6 +176,10 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                                 if side and hasattr(player, 'kills'):
                                     player_kills_by_side[player_name][side]['kills'] += player.kills
                                     player_kills_by_side[player_name][side]['rounds'] += 1
+                                # Track damage dealt per round (segment-level has damageDealt per round)
+                                if hasattr(player, 'damage_dealt'):
+                                    player_damage_dealt[player_name]['total_damage_dealt'] += player.damage_dealt
+                                    player_damage_dealt[player_name]['rounds'] += 1
 
     # Calculate preferred weapons and side stats for each player
     player_analysis = {}
@@ -195,6 +201,12 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                     'avg_kills': round(kills / rounds, 2) if rounds > 0 else 0.0
                 }
 
+            # Damage dealt (per-round from segments)
+            dmg = player_damage_dealt[player_name]
+            total_dmg = dmg['total_damage_dealt']
+            rounds_with_dmg = dmg['rounds']
+            avg_damage_dealt_per_round = round(total_dmg / rounds_with_dmg, 1) if rounds_with_dmg > 0 else 0.0
+
             player_analysis[player_name] = {
                 'series_played': player_series_count[player_name],
                 'total_kills': total_kills,
@@ -202,7 +214,10 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                 'preferred_weapon_kills': top_weapons[0][1] if top_weapons else 0,
                 'weapon_breakdown': dict(top_weapons),
                 'all_weapons': dict(weapon_counts),
-                'kills_by_side': side_stats
+                'kills_by_side': side_stats,
+                'total_damage_dealt': total_dmg,
+                'rounds_with_damage_data': rounds_with_dmg,
+                'avg_damage_dealt_per_round': avg_damage_dealt_per_round
             }
 
     return {
@@ -477,6 +492,10 @@ if st.session_state.selected_team:
                                              stats['preferred_weapon'] or "Unknown")
                                     st.metric("Kills with Preferred",
                                              stats['preferred_weapon_kills'])
+                                    st.metric("Avg Damage Dealt / Round",
+                                             stats.get('avg_damage_dealt_per_round', 0))
+                                    if stats.get('rounds_with_damage_data'):
+                                        st.caption(f"Over {stats['rounds_with_damage_data']} rounds")
 
                                 with col_b:
                                     st.metric("Total Kills", stats['total_kills'])
