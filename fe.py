@@ -718,26 +718,8 @@ if st.session_state.selected_team:
                         if map_analysis['total_actions'] > 0:
                             st.subheader("🗺️ Map Preferences")
 
-                            map_col1, map_col2 = st.columns(2)
-
-                            with map_col1:
-                                st.write("**Most Banned Maps:**")
-                                if map_analysis['most_banned_maps']:
-                                    for map_name, count in map_analysis['most_banned_maps']:
-                                        st.write(f"• {map_name}: {count} bans")
-                                else:
-                                    st.write("*No ban data available*")
-
-                            with map_col2:
-                                st.write("**Most Picked Maps:**")
-                                if map_analysis['most_picked_maps']:
-                                    for map_name, count in map_analysis['most_picked_maps']:
-                                        st.write(f"• {map_name}: {count} picks")
-                                else:
-                                    st.write("*No pick data available*")
-
                             # Show detailed map stats in expandable section
-                            with st.expander("📊 Detailed Map Statistics"):
+                            with st.expander("📊 Map Pick/Bans"):
                                 if map_analysis['map_bans']:
                                     st.write("**Ban Frequency:**")
                                     ban_data = [{"Map": map_name, "Bans": count}
