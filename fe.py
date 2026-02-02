@@ -335,6 +335,8 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     player_kills_by_side = defaultdict(_side_dict)
     # player_name -> {'total_damage_dealt': int, 'rounds': int} (per-round from segments)
     player_damage_dealt = defaultdict(lambda: {'total_damage_dealt': 0, 'rounds': 0})
+    # player_name -> {'head': int, 'body': int, 'leg': int} damage by target from segments
+    player_damage_by_target = defaultdict(lambda: {'head': 0, 'body': 0, 'leg': 0})
 
     for series in _series_details:
         # Only analyze Valorant series
@@ -422,6 +424,12 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                                 if hasattr(player, 'damage_dealt'):
                                     player_damage_dealt[player_name]['total_damage_dealt'] += player.damage_dealt
                                     player_damage_dealt[player_name]['rounds'] += 1
+                                # Track damage by target (head/body/leg) for headshot ratio and target %
+                                for t in getattr(player, 'damage_dealt_targets', []) or []:
+                                    target_name = (getattr(getattr(t, 'target', None), 'name', None) or '').strip().lower()
+                                    amount = getattr(t, 'damage_amount', 0) or 0
+                                    if target_name in ('head', 'body', 'leg'):
+                                        player_damage_by_target[player_name][target_name] += amount
 
     # Calculate preferred weapons and side stats for each player
     player_analysis = {}
@@ -449,6 +457,23 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
             rounds_with_dmg = dmg['rounds']
             avg_damage_dealt_per_round = round(total_dmg / rounds_with_dmg, 1) if rounds_with_dmg > 0 else 0.0
 
+            # Headshot ratio and target distribution (head/body/leg % of damage)
+            by_target = player_damage_by_target[player_name]
+            damage_to_head = by_target['head']
+            damage_to_body = by_target['body']
+            damage_to_leg = by_target['leg']
+            total_target_damage = damage_to_head + damage_to_body + damage_to_leg
+            if total_target_damage > 0:
+                headshot_ratio = round(100.0 * damage_to_head / total_target_damage, 1)
+                target_pct = {
+                    'head': round(100.0 * damage_to_head / total_target_damage, 1),
+                    'body': round(100.0 * damage_to_body / total_target_damage, 1),
+                    'leg': round(100.0 * damage_to_leg / total_target_damage, 1),
+                }
+            else:
+                headshot_ratio = 0.0
+                target_pct = {'head': 0.0, 'body': 0.0, 'leg': 0.0}
+
             player_analysis[player_name] = {
                 'series_played': player_series_count[player_name],
                 'total_kills': total_kills,
@@ -459,7 +484,9 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                 'kills_by_side': side_stats,
                 'total_damage_dealt': total_dmg,
                 'rounds_with_damage_data': rounds_with_dmg,
-                'avg_damage_dealt_per_round': avg_damage_dealt_per_round
+                'avg_damage_dealt_per_round': avg_damage_dealt_per_round,
+                'headshot_ratio': headshot_ratio,
+                'target_pct': target_pct,
             }
 
     return {
@@ -774,7 +801,7 @@ if st.session_state.selected_team:
 
                         # Weapon Analysis Section
                         if weapon_analysis['player_analysis']:
-                            st.subheader("🔫 Weapon Preferences")
+                            st.subheader("Player Preferences")
 
                         # Sort players by series played
                         sorted_players = sorted(
@@ -799,9 +826,23 @@ if st.session_state.selected_team:
 
                                 with col_b:
                                     st.metric("Total Kills", stats['total_kills'])
+                                    st.metric("Headshot ratio (damage)", f"{stats.get('headshot_ratio', 0):.1f}%")
                                     st.write("**Top Weapons:**")
                                     for weapon, kills in list(stats['weapon_breakdown'].items())[:3]:
                                         st.write(f"• {weapon}: {kills} kills")
+
+                                # Target distribution (head/body/leg % of damage) — overall, shown per weapon in table
+                                target_pct = stats.get('target_pct') or {}
+                                if any(target_pct.get(k) for k in ('head', 'body', 'leg')):
+                                    st.write("**Target distribution (damage):**")
+                                    st.write(f"Head **{target_pct.get('head', 0):.1f}%** · Body **{target_pct.get('body', 0):.1f}%** · Leg **{target_pct.get('leg', 0):.1f}%**")
+
+                                # Show weapon table without target % since API doesn't provide per-weapon target breakdown
+                                if stats.get('all_weapons'):
+                                    st.write("**Weapon Usage:**")
+                                    weapon_data = [{"Weapon": w, "Kills": k}
+                                                 for w, k in sorted(stats['all_weapons'].items(), key=lambda x: -x[1])]
+                                    st.dataframe(weapon_data, use_container_width=True)
 
                                 # Average kills per side (attacker / defender)
                                 if stats.get('kills_by_side'):
