@@ -115,6 +115,7 @@ class SeriesClient(AsyncBaseClient):
                   teams {
                     __typename
                     name
+                    won
                     players {
                       __typename
                       name

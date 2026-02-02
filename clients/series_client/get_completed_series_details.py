@@ -233,6 +233,7 @@ class GetCompletedSeriesDetailsSeriesStateGamesTeams(BaseModel):
         "GameTeamStateValorant",
     ] = Field(alias="__typename")
     name: str
+    won: bool
     players: list["GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayers"]
 
 

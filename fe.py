@@ -26,13 +26,16 @@ def get_series_client():
 
 # Cached analysis functions (defined at module level for proper caching)
 @st.cache_data
-def analyze_map_preferences(_series_details, _target_team_id, _months_back):
-    """Analyze map ban/pick preferences from draft actions for target team"""
-    from collections import Counter
+def analyze_map_preferences(_series_details, _target_team_id, _target_team_name, _months_back):
+    """Analyze map ban/pick preferences and win rates from draft actions and games for target team"""
+    from collections import Counter, defaultdict
 
     map_bans = Counter()
     map_picks = Counter()
     total_actions = 0
+
+    # Track wins/losses per map
+    map_games = defaultdict(lambda: {'games': 0, 'wins': 0})
 
     for series in _series_details:
         # Only analyze Valorant series
@@ -43,31 +46,67 @@ def analyze_map_preferences(_series_details, _target_team_id, _months_back):
             series.series_state.title.name_shortened != "val"):
             continue
 
-        if not hasattr(series.series_state, 'draft_actions'):
-            continue
+        # Analyze draft actions for ban/pick preferences
+        if hasattr(series.series_state, 'draft_actions'):
+            for draft_action in series.series_state.draft_actions:
+                # Check if this action was by the target team
+                if (hasattr(draft_action, 'drafter') and draft_action.drafter and
+                    hasattr(draft_action.drafter, 'id') and
+                    str(draft_action.drafter.id) == str(_target_team_id)):
 
-        for draft_action in series.series_state.draft_actions:
-            # Check if this action was by the target team
-            if (hasattr(draft_action, 'drafter') and draft_action.drafter and
-                hasattr(draft_action.drafter, 'id') and
-                str(draft_action.drafter.id) == str(_target_team_id)):
+                    total_actions += 1
 
-                total_actions += 1
+                    if hasattr(draft_action, 'type') and hasattr(draft_action, 'draftable'):
+                        action_type = draft_action.type
+                        map_name = draft_action.draftable.name if hasattr(draft_action.draftable, 'name') else None
 
-                if hasattr(draft_action, 'type') and hasattr(draft_action, 'draftable'):
-                    action_type = draft_action.type
-                    map_name = draft_action.draftable.name if hasattr(draft_action.draftable, 'name') else None
+                        if map_name:
+                            if action_type == "ban":
+                                map_bans[map_name] += 1
+                            elif action_type == "pick":
+                                map_picks[map_name] += 1
 
-                    if map_name:
-                        if action_type == "ban":
-                            map_bans[map_name] += 1
-                        elif action_type == "pick":
-                            map_picks[map_name] += 1
+        # Analyze games for win rates per map
+        if hasattr(series.series_state, 'games'):
+            for game in series.series_state.games:
+                map_name = None
+                if hasattr(game, 'map') and game.map and hasattr(game.map, 'name'):
+                    map_name = game.map.name
+
+                if not map_name:
+                    continue
+
+                # Find target team's result in this game
+                target_team_won = False
+                for game_team in game.teams:
+                    if hasattr(game_team, 'name') and _is_target_team(game_team.name, _target_team_name):
+                        if hasattr(game_team, 'won'):
+                            target_team_won = game_team.won
+                            break
+
+                map_games[map_name]['games'] += 1
+                if target_team_won:
+                    map_games[map_name]['wins'] += 1
 
     # Calculate preferences
     most_banned = map_bans.most_common(5) if map_bans else []
     most_picked = map_picks.most_common(5) if map_picks else []
     least_banned = list(reversed(map_bans.most_common()))[:5] if map_bans else []
+
+    # Calculate win rates per map
+    map_win_rates = {}
+    for map_name, stats in map_games.items():
+        games = stats['games']
+        wins = stats['wins']
+        win_rate = round((wins / games) * 100, 1) if games > 0 else 0.0
+        map_win_rates[map_name] = {
+            'games': games,
+            'wins': wins,
+            'win_rate': win_rate
+        }
+
+    # Sort by win rate (highest first)
+    sorted_win_rates = sorted(map_win_rates.items(), key=lambda x: x[1]['win_rate'], reverse=True)
 
     return {
         'total_actions': total_actions,
@@ -77,7 +116,9 @@ def analyze_map_preferences(_series_details, _target_team_id, _months_back):
         'most_picked_maps': most_picked,
         'least_banned_maps': least_banned,
         'total_bans': sum(map_bans.values()),
-        'total_picks': sum(map_picks.values())
+        'total_picks': sum(map_picks.values()),
+        'map_win_rates': map_win_rates,
+        'sorted_win_rates': sorted_win_rates
     }
 
 @st.cache_data
@@ -656,7 +697,7 @@ if st.session_state.selected_team:
         "How many months back to search?",
         min_value=1,
         max_value=12,
-        value=3,
+        value=6,
         step=1,
         help="Select how many months of historical data to retrieve"
     )
@@ -709,7 +750,7 @@ if st.session_state.selected_team:
                 if detailed_series:
                     # Pass months_back directly as cache parameter
                     weapon_analysis = analyze_player_weapons(detailed_series, team.name, months_back)
-                    map_analysis = analyze_map_preferences(detailed_series, team.id, months_back)
+                    map_analysis = analyze_map_preferences(detailed_series, team.id, team.name, months_back)
                     map_characters = analyze_map_characters(detailed_series, team.name, months_back)
                     opponent_impact = analyze_opponent_character_impact(detailed_series, team.name, months_back)
                     orb_priority = analyze_ultimate_orb_priority(detailed_series, team.name, months_back)
@@ -739,7 +780,7 @@ if st.session_state.selected_team:
                             st.subheader("🗺️ Map Preferences")
 
                             # Show detailed map stats in expandable section
-                            with st.expander("📊 Map Pick/Bans"):
+                            with st.expander("📊 Map Winrates & Picks/Bans"):
                                 if map_analysis['map_bans']:
                                     st.write("**Ban Frequency:**")
                                     ban_data = [{"Map": map_name, "Bans": count}
@@ -753,6 +794,19 @@ if st.session_state.selected_team:
                                                for map_name, count in map_analysis['map_picks'].items()]
                                     pick_data.sort(key=lambda x: x['Picks'], reverse=True)
                                     st.dataframe(pick_data, use_container_width=True)
+
+                                if map_analysis['sorted_win_rates']:
+                                    st.write("**Win Rates by Map:**")
+                                    win_rate_data = [
+                                        {
+                                            "Map": map_name,
+                                            "Games": stats['games'],
+                                            "Wins": stats['wins'],
+                                            "Win Rate": f"{stats['win_rate']:.1f}%"
+                                        }
+                                        for map_name, stats in map_analysis['sorted_win_rates']
+                                    ]
+                                    st.dataframe(win_rate_data, use_container_width=True)
 
                             # Characters by map: click a map to see preferred agents on that map
                             if map_characters:
