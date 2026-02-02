@@ -48,6 +48,7 @@ query GetAllSeriesInNext24Hours {
       startCursor
       endCursor
     }
+    # Ensure pageInfo fields are always included even when null
     edges{
       cursor
       node{
@@ -57,12 +58,13 @@ query GetAllSeriesInNext24Hours {
   }
 }
 
-query GetAllSeriesSinceDate($DateTime: String) {
+query GetAllSeriesSinceDate($DateTime: String, $TeamId: ID!) {
   allSeries(
     filter:{
       startTimeScheduled:{
         gte: $DateTime
       }
+      teamIds: { in: [$TeamId] }
     }
     orderBy: StartTimeScheduled
   ) {
@@ -73,6 +75,7 @@ query GetAllSeriesSinceDate($DateTime: String) {
       startCursor
       endCursor
     }
+    # Ensure pageInfo fields are always included even when null
     edges{
       cursor
       node{

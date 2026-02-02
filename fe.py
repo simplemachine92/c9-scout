@@ -10,7 +10,7 @@ from clients.central_client.fragments import TeamFields, SeriesFields
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
 
-# Initialize the client (cached to avoid recreating on every rerun)
+# Initialize the client
 def get_central_client():
     return CentralDbClient(
         url="https://api-op.grid.gg/central-data/graphql",
@@ -29,10 +29,10 @@ async def fetch_team(team_name: str):
     except (AttributeError, IndexError):
         return None
 
-async def fetch_recent_series(since_date: str):
+async def fetch_recent_series(since_date: str, team_id: str):
     """User provides timestamp for how far back they would like to scout"""
     client = get_central_client()
-    response = await client.get_all_series_since_date(since_date)
+    response = await client.get_all_series_since_date(team_id, since_date)
 
     try:
         # Check if there are any edges first
@@ -51,9 +51,11 @@ async def fetch_recent_series(since_date: str):
 
 def calculate_date_from_months(months_back: int) -> str:
     """Calculate the date string from months back"""
-    target_date = datetime.now() - timedelta(days=months_back * 30)
-    # Format as ISO 8601 string with timezone: "2024-04-24T15:00:07+02:00"
-    return target_date.strftime("%Y-%m-%dT%H:%M:%S%z") if target_date.tzinfo else target_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
+    from datetime import timezone
+    target_date = datetime.now(timezone.utc) - timedelta(days=months_back * 30)
+    # Format as ISO 8601 string with timezone: "2024-04-24T15:00:07+00:00"
+    # Use +00:00 format (with colon) as used in the working hardcoded query
+    return target_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
 # Streamlit UI
@@ -78,6 +80,7 @@ async def search_team():
             if team:
                 st.session_state.selected_team = team
                 st.success(f"Team found: {team.name if hasattr(team, 'name') else team.id}")
+                print(f"Team ID: {team.id}")
             else:
                 st.error(f"Team '{team_name}' not found.")
                 st.session_state.selected_team = None
@@ -134,7 +137,7 @@ if st.session_state.selected_team:
             since_date = calculate_date_from_months(months_back)
 
             # Run async function directly (Streamlit handles the event loop)
-            series_list = await fetch_recent_series(since_date)
+            series_list = await fetch_recent_series(since_date, team.id)
 
             if series_list:
                 st.success(f"Found {len(series_list)} series!")

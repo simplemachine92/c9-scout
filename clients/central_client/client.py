@@ -184,13 +184,16 @@ class CentralDbClient(AsyncBaseClient):
         return GetAllSeriesInNext24Hours.model_validate(data)
 
     async def get_all_series_since_date(
-        self, date_time: Union[Optional[str], UnsetType] = UNSET, **kwargs: Any
+        self,
+        team_id: str,
+        date_time: Union[Optional[str], UnsetType] = UNSET,
+        **kwargs: Any
     ) -> GetAllSeriesSinceDate:
         query = gql(
             """
-            query GetAllSeriesSinceDate($DateTime: String) {
+            query GetAllSeriesSinceDate($DateTime: String, $TeamId: ID!) {
               allSeries(
-                filter: {startTimeScheduled: {gte: $DateTime}}
+                filter: {startTimeScheduled: {gte: $DateTime}, teamIds: {in: [$TeamId]}}
                 orderBy: StartTimeScheduled
               ) {
                 totalCount
@@ -231,7 +234,7 @@ class CentralDbClient(AsyncBaseClient):
             }
             """
         )
-        variables: dict[str, object] = {"DateTime": date_time}
+        variables: dict[str, object] = {"DateTime": date_time, "TeamId": team_id}
         response = await self.execute(
             query=query,
             operation_name="GetAllSeriesSinceDate",
