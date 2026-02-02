@@ -148,31 +148,13 @@ async def search_team():
 if st.button("Search Team"):
     asyncio.run(search_team())
 
-# Step 2: Display team details and get months back
+# Step 2: Select time period for scouting
 if st.session_state.selected_team:
     team = st.session_state.selected_team
     
-    # Display team information
+    # Step 2: Select time period for scouting
     st.divider()
-    st.subheader("Team Details")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.metric("Team ID", team.id)
-        if hasattr(team, 'name'):
-            st.metric("Name", team.name)
-    
-    with col2:
-        if hasattr(team, 'code'):
-            st.metric("Code", team.code)
-    
-    # Show all available fields
-    with st.expander("View All Team Fields"):
-        st.json(team.model_dump())
-    
-    # Step 3: Get months back and fetch series
-    st.divider()
-    st.subheader("Step 2: Search for Recent Series")
+    st.subheader("Step 2: Select Analysis Period")
     
     months_back = st.number_input(
         "How many months back to search?",
@@ -496,8 +478,8 @@ with st.sidebar:
     
     st.subheader("How to Use")
     st.write("1. Enter a team name and click 'Search Team'")
-    st.write("2. Select how many months of data to analyze")
-    st.write("3. Click 'Scout Team' for comprehensive Valorant performance analysis")
+    st.write("2. Select analysis period and click 'Scout Team'")
+    st.write("3. View comprehensive Valorant performance insights")
     
     st.subheader("Example Teams")
     st.code("LOUD\nFnatic\nT1\nG2 Esports")
