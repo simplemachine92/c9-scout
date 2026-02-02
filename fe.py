@@ -63,7 +63,7 @@ st.title("Team & Series Lookup")
 st.write("Search for a team and view their recent series")
 
 # Step 1: Team Search
-st.subheader("Step 1: Find a Team")
+st.subheader("Step 1: Enter Opponent Name")
 team_name = st.text_input("Enter team name:", placeholder="e.g., LOUD, Cloud9, G2 Esports")
 
 # Initialize session state to store the team
