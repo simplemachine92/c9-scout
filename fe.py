@@ -126,6 +126,104 @@ def analyze_map_characters(_series_details, _target_team_name, _months_back):
         result[map_name] = char_counts.most_common()
     return result
 
+def _is_target_team(team_name, target_name):
+    if not team_name or not target_name:
+        return False
+    return (
+        team_name == target_name or
+        team_name.startswith(target_name) or
+        target_name in team_name
+    )
+
+@st.cache_data
+def analyze_opponent_character_impact(_series_details, _target_team_name, _months_back):
+    """
+    When the opponent plays a character, how well do they perform (kills, damage)?
+    Returns characters to prioritize denying, ranked by opponent performance when playing them.
+    """
+    from collections import defaultdict
+
+    # character -> { games_played: int, total_kills: int, total_damage: int, total_rounds: int }
+    char_stats = defaultdict(lambda: {"games_played": 0, "total_kills": 0, "total_damage": 0, "total_rounds": 0})
+
+    for series in _series_details:
+        if (not series.series_state or
+            not hasattr(series.series_state, "title") or
+            not series.series_state.title or
+            getattr(series.series_state.title, "name_shortened", None) != "val"):
+            continue
+        if not series.series_state.games:
+            continue
+
+        for game in series.series_state.games:
+            if not game.teams or len(game.teams) < 2:
+                continue
+
+            # Identify opponent team (the one that isn't the scouted team)
+            opponent_team = None
+            for t in game.teams:
+                if not hasattr(t, "name"):
+                    continue
+                if not _is_target_team(t.name, _target_team_name):
+                    opponent_team = t
+                    break
+            if not opponent_team or not hasattr(opponent_team, "players"):
+                continue
+
+            # Opponent player -> character name in this game
+            player_to_char = {}
+            for p in opponent_team.players:
+                if hasattr(p, "name") and hasattr(p, "character") and p.character and hasattr(p.character, "name"):
+                    player_to_char[p.name] = p.character.name
+            if not player_to_char:
+                continue
+
+            # Sum kills and damage per opponent player from segments (this game)
+            player_kills = defaultdict(int)
+            player_damage = defaultdict(int)
+            for segment in getattr(game, "segments", []) or []:
+                for seg_team in getattr(segment, "teams", []) or []:
+                    if not hasattr(seg_team, "name") or _is_target_team(seg_team.name, _target_team_name):
+                        continue
+                    for seg_player in getattr(seg_team, "players", []) or []:
+                        pname = getattr(seg_player, "name", None)
+                        if pname is None:
+                            continue
+                        player_kills[pname] += getattr(seg_player, "kills", 0) or 0
+                        player_damage[pname] += getattr(seg_player, "damage_dealt", 0) or 0
+                    break  # one opponent team per segment
+            rounds_this_game = len(getattr(game, "segments", []) or [])
+
+            for pname, char_name in player_to_char.items():
+                k = player_kills[pname]
+                d = player_damage[pname]
+                char_stats[char_name]["games_played"] += 1
+                char_stats[char_name]["total_kills"] += k
+                char_stats[char_name]["total_damage"] += d
+                char_stats[char_name]["total_rounds"] += rounds_this_game
+
+    # Build ranked list: (character, games_played, avg_kills_per_game, avg_damage_per_round)
+    result = []
+    for char_name, s in char_stats.items():
+        g = s["games_played"]
+        if g == 0:
+            continue
+        avg_kills = s["total_kills"] / g
+        total_rounds = s["total_rounds"] or 1
+        avg_damage_per_round = s["total_damage"] / total_rounds
+        result.append({
+            "character": char_name,
+            "games_played": g,
+            "avg_kills_per_game": round(avg_kills, 1),
+            "avg_damage_per_round": round(avg_damage_per_round, 0),
+            "total_kills": s["total_kills"],
+            "total_damage": s["total_damage"],
+            "total_rounds": s["total_rounds"],
+        })
+    # Sort by impact: avg kills per game (primary), then avg damage per round
+    result.sort(key=lambda x: (x["avg_kills_per_game"], x["avg_damage_per_round"]), reverse=True)
+    return result
+
 @st.cache_data
 def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     """Analyze player weapon preferences from detailed series data for target team only"""
@@ -439,6 +537,7 @@ if st.session_state.selected_team:
         analyze_player_weapons.clear()
         analyze_map_preferences.clear()
         analyze_map_characters.clear()
+        analyze_opponent_character_impact.clear()
         asyncio.run(find_series())
 
     # Analysis Section (appears when we have series data)
@@ -460,6 +559,7 @@ if st.session_state.selected_team:
                     weapon_analysis = analyze_player_weapons(detailed_series, team.name, months_back)
                     map_analysis = analyze_map_preferences(detailed_series, team.id, months_back)
                     map_characters = analyze_map_characters(detailed_series, team.name, months_back)
+                    opponent_impact = analyze_opponent_character_impact(detailed_series, team.name, months_back)
 
                     # Show team performance analysis
                     if weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0:
@@ -530,6 +630,17 @@ if st.session_state.selected_team:
                                         for char_name, count in chars:
                                             st.write(f"• **{char_name}**: {count}")
 
+                            st.divider()
+
+                        # Opponent character impact: which agents to deny (show whenever we have data)
+                        if opponent_impact:
+                            st.subheader("🚫 Characters to deny")
+                            st.caption("When the opponent plays these agents they perform best. Consider banning or first-picking to deny them.")
+                            for i, row in enumerate(opponent_impact[:10], 1):
+                                with st.expander(f"**{i}. {row['character']}** — {row['games_played']} games, {row['avg_kills_per_game']} avg kills/game"):
+                                    st.metric("Avg kills per game", row["avg_kills_per_game"])
+                                    st.metric("Avg damage per round", f"{row['avg_damage_per_round']:.0f}")
+                                    st.caption(f"Total: {row['total_kills']} kills, {row['total_damage']} damage over {row['total_rounds']} rounds")
                             st.divider()
 
                         # Weapon Analysis Section
