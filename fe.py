@@ -81,6 +81,52 @@ def analyze_map_preferences(_series_details, _target_team_id, _months_back):
     }
 
 @st.cache_data
+def analyze_map_characters(_series_details, _target_team_name, _months_back):
+    """For each map, count how often the target team played each character (agent) on that map"""
+    from collections import defaultdict, Counter
+
+    # map_name -> character_name -> count (games played)
+    map_characters = defaultdict(Counter)
+
+    for series in _series_details:
+        if (not series.series_state or
+            not hasattr(series.series_state, 'title') or
+            not series.series_state.title or
+            not hasattr(series.series_state.title, 'name_shortened') or
+            series.series_state.title.name_shortened != "val"):
+            continue
+        if not series.series_state.games:
+            continue
+
+        for game in series.series_state.games:
+            map_name = None
+            if hasattr(game, 'map') and game.map and hasattr(game.map, 'name'):
+                map_name = game.map.name
+            if not map_name:
+                continue
+
+            for team in game.teams:
+                if not hasattr(team, 'name'):
+                    continue
+                if (team.name != _target_team_name and
+                    not team.name.startswith(_target_team_name) and
+                    _target_team_name not in team.name):
+                    continue
+
+                for player in team.players:
+                    if hasattr(player, 'character') and player.character and hasattr(player.character, 'name'):
+                        char_name = player.character.name
+                        if char_name:
+                            map_characters[map_name][char_name] += 1
+                break  # only one matching team per game
+
+    # Convert to map_name -> list of (character, count) sorted by count desc
+    result = {}
+    for map_name, char_counts in map_characters.items():
+        result[map_name] = char_counts.most_common()
+    return result
+
+@st.cache_data
 def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     """Analyze player weapon preferences from detailed series data for target team only"""
     from collections import defaultdict, Counter
@@ -392,6 +438,7 @@ if st.session_state.selected_team:
         # Clear cached analysis results when starting a new scout
         analyze_player_weapons.clear()
         analyze_map_preferences.clear()
+        analyze_map_characters.clear()
         asyncio.run(find_series())
 
     # Analysis Section (appears when we have series data)
@@ -412,6 +459,7 @@ if st.session_state.selected_team:
                     # Pass months_back directly as cache parameter
                     weapon_analysis = analyze_player_weapons(detailed_series, team.name, months_back)
                     map_analysis = analyze_map_preferences(detailed_series, team.id, months_back)
+                    map_characters = analyze_map_characters(detailed_series, team.name, months_back)
 
                     # Show team performance analysis
                     if weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0:
@@ -469,6 +517,18 @@ if st.session_state.selected_team:
                                                for map_name, count in map_analysis['map_picks'].items()]
                                     pick_data.sort(key=lambda x: x['Picks'], reverse=True)
                                     st.dataframe(pick_data, use_container_width=True)
+
+                            # Characters by map: click a map to see preferred agents on that map
+                            if map_characters:
+                                st.write("**Characters by map** — expand a map to see which agents the team plays there:")
+                                for map_name in sorted(map_characters.keys()):
+                                    chars = map_characters[map_name]
+                                    if not chars:
+                                        continue
+                                    total_picks = sum(c for _, c in chars)
+                                    with st.expander(f"🗺️ {map_name} ({total_picks} agent picks)"):
+                                        for char_name, count in chars:
+                                            st.write(f"• **{char_name}**: {count}")
 
                             st.divider()
 
