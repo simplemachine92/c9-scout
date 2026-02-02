@@ -847,6 +847,9 @@ if st.session_state.selected_team:
         analyze_ultimate_orb_priority.clear()
         asyncio.run(find_series())
 
+    # Reserve space for chat interface to prevent scrolling
+    chat_placeholder = st.empty()
+
     # Analysis Section (appears when we have series data)
     if st.session_state.series_list:
         series_list = st.session_state.series_list
@@ -1060,80 +1063,81 @@ if st.session_state.selected_team:
             else:
                 st.error("No valid series IDs found for weapon analysis")
 
-# LLM Chat Interface (only show if we have analysis data and OpenAI key)
+# Use the chat placeholder for the chat interface (only show if we have analysis data and OpenAI key)
 if (st.session_state.get('series_list') and openai_client and
     (st.session_state.get('weapon_analysis', {}).get('player_analysis') or
      st.session_state.get('map_analysis', {}).get('total_actions', 0) > 0 or
      st.session_state.get('opponent_impact') or
      st.session_state.get('orb_priority', {}).get("by_map"))):
 
-    st.divider()
-    st.header("🤖 Ask About Team Performance")
+    with chat_placeholder.container():
+        st.divider()
+        st.header("🤖 Ask About Team Performance")
 
-    # Initialize chat messages if not exists
-    if "chat_messages" not in st.session_state:
-        st.session_state.chat_messages = []
+        # Initialize chat messages if not exists
+        if "chat_messages" not in st.session_state:
+            st.session_state.chat_messages = []
 
-    # Display chat history
-    for message in st.session_state.chat_messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+        # Display chat history
+        for message in st.session_state.chat_messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    # Chat input
-    if prompt := st.chat_input("Ask anything about the team's performance..."):
-        if not prompt.strip():
-            st.warning("Please enter a question.")
-        else:
-            # Add user message to history
-            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+        # Chat input
+        if prompt := st.chat_input("Ask anything about the team's performance..."):
+            if not prompt.strip():
+                st.warning("Please enter a question.")
+            else:
+                # Add user message to history
+                st.session_state.chat_messages.append({"role": "user", "content": prompt})
 
-            try:
-                # Format analysis data for LLM
-                context = format_analysis_for_llm(
-                    team,
-                    st.session_state.weapon_analysis,
-                    st.session_state.map_analysis,
-                    st.session_state.map_characters,
-                    st.session_state.opponent_impact,
-                    st.session_state.orb_priority,
-                    months_back
-                )
-
-                # Create LLM prompt
-                system_prompt = f"""
-                You are an expert Valorant esports analyst. Use the team performance data below to answer questions about {team.name}'s performance.
-
-                Provide specific insights backed by the data. Be concise but informative. Use numbers and percentages when relevant.
-                If asked about comparisons, rankings, or recommendations, base them on the actual performance metrics.
-                If the question cannot be answered from the data, say so clearly.
-
-                Team Data:
-                {context}
-                """
-
-                # Query OpenAI
-                with st.spinner("Analyzing..."):
-                    response = openai_client.chat.completions.create(
-                        model="gpt-4o-mini",  # Using cost-effective model
-                        messages=[
-                            {"role": "system", "content": system_prompt},
-                            {"role": "user", "content": prompt}
-                        ],
-                        max_tokens=1000,
-                        temperature=0.3
+                try:
+                    # Format analysis data for LLM
+                    context = format_analysis_for_llm(
+                        team,
+                        st.session_state.weapon_analysis,
+                        st.session_state.map_analysis,
+                        st.session_state.map_characters,
+                        st.session_state.opponent_impact,
+                        st.session_state.orb_priority,
+                        months_back
                     )
 
-                ai_response = response.choices[0].message.content
+                    # Create LLM prompt
+                    system_prompt = f"""
+                    You are an expert Valorant esports analyst. Use the team performance data below to answer questions about {team.name}'s performance.
 
-                # Add AI response to history
-                st.session_state.chat_messages.append({"role": "assistant", "content": ai_response})
+                    Provide specific insights backed by the data. Be concise but informative. Use numbers and percentages when relevant.
+                    If asked about comparisons, rankings, or recommendations, base them on the actual performance metrics.
+                    If the question cannot be answered from the data, say so clearly.
 
-                # Rerun to display the new messages
-                st.rerun()
+                    Team Data:
+                    {context}
+                    """
 
-            except Exception as e:
-                st.error(f"Error querying AI: {str(e)}")
-                st.info("Make sure your OPENAI_API_KEY is set correctly in the .env file and you have credits in your OpenAI account.")
+                    # Query OpenAI
+                    with st.spinner("Analyzing..."):
+                        response = openai_client.chat.completions.create(
+                            model="gpt-4o-mini",  # Using cost-effective model
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": prompt}
+                            ],
+                            max_tokens=1000,
+                            temperature=0.3
+                        )
+
+                    ai_response = response.choices[0].message.content
+
+                    # Add AI response to history
+                    st.session_state.chat_messages.append({"role": "assistant", "content": ai_response})
+
+                    # Rerun to display the new messages
+                    st.rerun()
+
+                except Exception as e:
+                    st.error(f"Error querying AI: {str(e)}")
+                    st.info("Make sure your OPENAI_API_KEY is set correctly in the .env file and you have credits in your OpenAI account.")
 
 # Add some helpful information
 with st.sidebar:
