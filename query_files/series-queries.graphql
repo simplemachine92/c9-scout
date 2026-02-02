@@ -1,5 +1,8 @@
 query GetCompletedSeriesDetails($id: ID!) {
   seriesState(id: $id) {
+    title {
+      nameShortened
+    }
     draftActions {
       sequenceNumber
       drafter {

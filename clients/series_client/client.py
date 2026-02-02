@@ -19,6 +19,12 @@ class SeriesClient(AsyncBaseClient):
             """
             query GetCompletedSeriesDetails($id: ID!) {
               seriesState(id: $id) {
+                title {
+                  nameShortened
+                }
+                title {
+                  nameShortened
+                }
                 draftActions {
                   sequenceNumber
                   drafter {

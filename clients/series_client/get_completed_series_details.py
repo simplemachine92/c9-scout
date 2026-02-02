@@ -15,6 +15,7 @@ class GetCompletedSeriesDetails(BaseModel):
 
 
 class GetCompletedSeriesDetailsSeriesState(BaseModel):
+    title: "GetCompletedSeriesDetailsSeriesStateTitle"
     draft_actions: list["GetCompletedSeriesDetailsSeriesStateDraftActions"] = Field(
         alias="draftActions"
     )
@@ -25,6 +26,10 @@ class GetCompletedSeriesDetailsSeriesState(BaseModel):
     finished: bool
     teams: list["GetCompletedSeriesDetailsSeriesStateTeams"]
     games: list["GetCompletedSeriesDetailsSeriesStateGames"]
+
+
+class GetCompletedSeriesDetailsSeriesStateTitle(BaseModel):
+    name_shortened: str = Field(alias="nameShortened")
 
 
 class GetCompletedSeriesDetailsSeriesStateDraftActions(BaseModel):

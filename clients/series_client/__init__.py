@@ -41,6 +41,7 @@ from .get_completed_series_details import (
     GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersInventoryItems,
     GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersWeaponKills,
     GetCompletedSeriesDetailsSeriesStateTeams,
+    GetCompletedSeriesDetailsSeriesStateTitle,
 )
 from .input_types import GameStateFilter
 
@@ -80,6 +81,7 @@ __all__ = [
     "GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersInventoryItems",
     "GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersWeaponKills",
     "GetCompletedSeriesDetailsSeriesStateTeams",
+    "GetCompletedSeriesDetailsSeriesStateTitle",
     "GraphQLClientError",
     "GraphQLClientGraphQLError",
     "GraphQLClientGraphQLMultiError",
