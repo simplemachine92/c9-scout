@@ -7,7 +7,6 @@ from clients.central_client.client import CentralDbClient
 from clients.central_client.fragments import TeamFields, SeriesFields
 from clients.series_client.client import SeriesClient
 from openai import OpenAI, DefaultHttpxClient
-import httpx
 
 # Load environment variables
 load_dotenv()
@@ -18,15 +17,15 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = None
 if OPENAI_API_KEY:
     try:
-        # Use DefaultHttpxClient with explicit proxy=None to disable proxy auto-detection
+        # Use DefaultHttpxClient with proxy=None to disable proxy auto-detection
         http_client = DefaultHttpxClient(proxy=None)
         openai_client = OpenAI(
             api_key=OPENAI_API_KEY,
             http_client=http_client
         )
     except Exception as e:
-        st.error(f"Failed to initialize OpenAI client: {str(e)}")
-        st.info("Check your OPENAI_API_KEY in the .env file and ensure you have sufficient OpenAI credits.")
+        st.error(f"OpenAI client initialization failed: {str(e)}")
+        st.info("Verify your OPENAI_API_KEY in .env and ensure you have OpenAI credits.")
 
 def format_analysis_for_llm(team, weapon_analysis, map_analysis, map_characters, opponent_impact, orb_priority, months_back):
     """Format all analysis data into LLM-friendly text"""
