@@ -765,11 +765,10 @@ async def get_series_details(series_ids: list[str]):
 
 
 # Streamlit UI
-st.title("Team & Series Lookup")
-st.write("Search for a team and view their recent series")
+st.title("Team Lookup")
+st.write("Search for a team and aggregate data on their performance")
 
 # Step 1: Team Search
-st.subheader("Step 1: Enter Opponent Name")
 team_name = st.text_input("Enter team name:", placeholder="e.g., LOUD, Cloud9, G2 Esports")
 
 # Initialize session state to store the team and series
@@ -896,6 +895,47 @@ if st.session_state.selected_team:
                             st.metric("Map Actions", map_analysis['total_actions'])
                         with col4:
                             st.metric("Maps Banned", map_analysis['total_bans'])
+
+                        # AI-Generated Summary
+                        if openai_client:
+                            try:
+                                with st.spinner("Generating AI summary..."):
+                                    summary_context = format_analysis_for_llm(
+                                        team, weapon_analysis, map_analysis, map_characters,
+                                        opponent_impact, orb_priority, months_back
+                                    )
+
+                                summary_prompt = f"""
+                                Analyze this Valorant team as an OPPONENT and provide strategic insights on how to beat them in a series.
+                                Focus on counter-strategies for:
+                                - Maps where they perform well (and how to deny their advantages)
+                                - Agents they prefer (ban/pick priorities to counter them)
+                                - Ultimate orb roles (who to target to disrupt their ult economy)
+                                - Player weaknesses and exploitable patterns
+                                - Map-specific strategies to counter their tendencies
+
+                                Frame this as "how to beat {team.name}" - provide specific recommendations with data-backed reasoning.
+                                Keep it to 3-4 paragraphs, highlight counter-strategies with specific numbers.
+                                Write in a professional esports analyst style focused on matchup preparation.
+
+                                Team Data:
+                                {summary_context}
+                                """
+
+                                response = openai_client.chat.completions.create(
+                                    model="gpt-4o-mini",
+                                    messages=[{"role": "user", "content": summary_prompt}],
+                                    max_tokens=800,
+                                    temperature=0.3
+                                )
+
+                                ai_summary = response.choices[0].message.content
+
+                                st.success("🤖 AI Performance Summary")
+                                st.write(ai_summary)
+
+                            except Exception as e:
+                                st.warning(f"Could not generate AI summary: {str(e)}")
 
                         st.divider()
 
@@ -1072,7 +1112,7 @@ if (st.session_state.get('series_list') and openai_client and
 
     with chat_placeholder.container():
         st.divider()
-        st.header("🤖 Ask About Team Performance")
+        st.header("🤖 Ask About The Data")
 
         # Initialize chat messages if not exists
         if "chat_messages" not in st.session_state:
@@ -1084,7 +1124,7 @@ if (st.session_state.get('series_list') and openai_client and
                 st.markdown(message["content"])
 
         # Chat input
-        if prompt := st.chat_input("Ask anything about the team's performance..."):
+        if prompt := st.chat_input("Ask anything about the data..."):
             if not prompt.strip():
                 st.warning("Please enter a question.")
             else:
