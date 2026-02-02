@@ -654,7 +654,7 @@ if st.session_state.selected_team:
 
                         # Opponent character impact: which agents to deny (show whenever we have data)
                         if opponent_impact:
-                            st.subheader("🚫 Characters to deny")
+                            st.subheader("🚫 Agents to deny")
                             st.caption("When the opponent plays these agents they perform best. Consider banning or first-picking to deny them.")
                             for i, row in enumerate(opponent_impact[:10], 1):
                                 with st.expander(f"**{i}. {row['character']}** — {row['games_played']} games, {row['avg_kills_per_game']} avg kills/game"):
