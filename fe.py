@@ -140,11 +140,14 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
     """
     When the opponent plays a character, how well do they perform (kills, damage)?
     Returns characters to prioritize denying, ranked by opponent performance when playing them.
+    Includes per-map breakdown so we can show which map each character performs best on.
     """
     from collections import defaultdict
 
-    # character -> { games_played: int, total_kills: int, total_damage: int, total_rounds: int }
+    # character -> { games_played, total_kills, total_damage, total_rounds }
     char_stats = defaultdict(lambda: {"games_played": 0, "total_kills": 0, "total_damage": 0, "total_rounds": 0})
+    # character -> map_name -> { games_played, total_kills, total_damage, total_rounds }
+    char_map_stats = defaultdict(lambda: defaultdict(lambda: {"games_played": 0, "total_kills": 0, "total_damage": 0, "total_rounds": 0}))
 
     for series in _series_details:
         if (not series.series_state or
@@ -158,6 +161,10 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
         for game in series.series_state.games:
             if not game.teams or len(game.teams) < 2:
                 continue
+
+            map_name = None
+            if hasattr(game, "map") and game.map and hasattr(game.map, "name"):
+                map_name = game.map.name or "Unknown"
 
             # Identify opponent team (the one that isn't the scouted team)
             opponent_team = None
@@ -201,8 +208,13 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
                 char_stats[char_name]["total_kills"] += k
                 char_stats[char_name]["total_damage"] += d
                 char_stats[char_name]["total_rounds"] += rounds_this_game
+                if map_name:
+                    char_map_stats[char_name][map_name]["games_played"] += 1
+                    char_map_stats[char_name][map_name]["total_kills"] += k
+                    char_map_stats[char_name][map_name]["total_damage"] += d
+                    char_map_stats[char_name][map_name]["total_rounds"] += rounds_this_game
 
-    # Build ranked list: (character, games_played, avg_kills_per_game, avg_damage_per_round)
+    # Build ranked list with best_maps per character
     result = []
     for char_name, s in char_stats.items():
         g = s["games_played"]
@@ -211,6 +223,14 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
         avg_kills = s["total_kills"] / g
         total_rounds = s["total_rounds"] or 1
         avg_damage_per_round = s["total_damage"] / total_rounds
+        # Best maps: sort by avg kills per game on that map (min 1 game)
+        best_maps = []
+        for map_name, ms in char_map_stats[char_name].items():
+            if ms["games_played"] < 1:
+                continue
+            avg_kills_map = ms["total_kills"] / ms["games_played"]
+            best_maps.append((map_name, round(avg_kills_map, 1), ms["games_played"]))
+        best_maps.sort(key=lambda x: (x[1], x[2]), reverse=True)
         result.append({
             "character": char_name,
             "games_played": g,
@@ -219,8 +239,8 @@ def analyze_opponent_character_impact(_series_details, _target_team_name, _month
             "total_kills": s["total_kills"],
             "total_damage": s["total_damage"],
             "total_rounds": s["total_rounds"],
+            "best_maps": best_maps[:5],
         })
-    # Sort by impact: avg kills per game (primary), then avg damage per round
     result.sort(key=lambda x: (x["avg_kills_per_game"], x["avg_damage_per_round"]), reverse=True)
     return result
 
@@ -640,6 +660,10 @@ if st.session_state.selected_team:
                                 with st.expander(f"**{i}. {row['character']}** — {row['games_played']} games, {row['avg_kills_per_game']} avg kills/game"):
                                     st.metric("Avg kills per game", row["avg_kills_per_game"])
                                     st.metric("Avg damage per round", f"{row['avg_damage_per_round']:.0f}")
+                                    if row.get("best_maps"):
+                                        st.write("**Best on:**")
+                                        for map_name, avg_kills, games in row["best_maps"]:
+                                            st.write(f"• **{map_name}** — {avg_kills} avg kills/game ({games} games)")
                                     st.caption(f"Total: {row['total_kills']} kills, {row['total_damage']} damage over {row['total_rounds']} rounds")
                             st.divider()
 
