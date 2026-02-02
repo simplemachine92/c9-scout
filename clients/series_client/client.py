@@ -4,7 +4,7 @@
 from typing import Any
 
 from .async_base_client import AsyncBaseClient
-from .get_live_dota_series_state import GetLiveDotaSeriesState
+from .get_completed_series_details import GetCompletedSeriesDetails
 
 
 def gql(q: str) -> str:
@@ -12,11 +12,23 @@ def gql(q: str) -> str:
 
 
 class SeriesClient(AsyncBaseClient):
-    async def get_live_dota_series_state(self, **kwargs: Any) -> GetLiveDotaSeriesState:
+    async def get_completed_series_details(
+        self, **kwargs: Any
+    ) -> GetCompletedSeriesDetails:
         query = gql(
             """
-            query GetLiveDotaSeriesState {
-              seriesState(id: "2") {
+            query GetCompletedSeriesDetails {
+              seriesState(id: "2819695") {
+                draftActions {
+                  sequenceNumber
+                  drafter {
+                    id
+                  }
+                  type
+                  draftable {
+                    name
+                  }
+                }
                 valid
                 updatedAt
                 format
@@ -27,22 +39,100 @@ class SeriesClient(AsyncBaseClient):
                   name
                   won
                 }
-                games(filter: {started: true, finished: false}) {
+                games(filter: {finished: true}) {
                   sequenceNumber
+                  segments {
+                    sequenceNumber
+                    teams {
+                      __typename
+                      name
+                      players {
+                        __typename
+                        ... on SegmentPlayerStateValorant {
+                          name
+                          headshots
+                          damageDealt
+                          damageTaken
+                          currentArmor
+                          currentHealth
+                          damageDealtTargets {
+                            target {
+                              name
+                            }
+                            damageAmount
+                            damageTypes {
+                              type
+                              damageAmount
+                              occurrenceCount
+                            }
+                          }
+                          damageDealtSources {
+                            source {
+                              name
+                            }
+                            damageAmount
+                            damageTypes {
+                              type
+                              damageAmount
+                              occurrenceCount
+                            }
+                          }
+                          firstKill
+                          kills
+                          killAssistsGiven
+                          killAssistsReceived
+                          weaponKills {
+                            weaponName
+                            count
+                          }
+                          deaths
+                          objectives {
+                            type
+                            completedFirst
+                            completionCount
+                          }
+                        }
+                      }
+                    }
+                  }
+                  map {
+                    name
+                    bounds {
+                      min {
+                        x
+                        y
+                      }
+                      max {
+                        x
+                        y
+                      }
+                    }
+                  }
                   teams {
                     __typename
                     name
                     players {
                       __typename
                       name
-                      kills
-                      deaths
-                      netWorth
-                      money
-                      position {
-                        x
-                        y
+                      character {
+                        name
+                        id
                       }
+                      inventory {
+                        items {
+                          name
+                        }
+                      }
+                      kills
+                      killAssistsGiven
+                      killAssistsReceived
+                      weaponKills {
+                        weaponName
+                        count
+                      }
+                      deaths
+                      money
+                      netWorth
                     }
                   }
                 }
@@ -53,9 +143,9 @@ class SeriesClient(AsyncBaseClient):
         variables: dict[str, object] = {}
         response = await self.execute(
             query=query,
-            operation_name="GetLiveDotaSeriesState",
+            operation_name="GetCompletedSeriesDetails",
             variables=variables,
             **kwargs
         )
         data = self.get_data(response)
-        return GetLiveDotaSeriesState.model_validate(data)
+        return GetCompletedSeriesDetails.model_validate(data)
