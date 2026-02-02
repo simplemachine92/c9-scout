@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from clients.central_client.client import CentralDbClient
 from clients.central_client.fragments import TeamFields, SeriesFields
+from clients.series_client.client import SeriesClient
 
 # Load environment variables
 load_dotenv()
@@ -14,6 +15,12 @@ API_KEY = os.getenv("API_KEY")
 def get_central_client():
     return CentralDbClient(
         url="https://api-op.grid.gg/central-data/graphql",
+        headers={"x-api-key": API_KEY}
+    )
+
+def get_series_client():
+    return SeriesClient(
+        url="https://api-op.grid.gg/live-data-feed/series-state/graphql",
         headers={"x-api-key": API_KEY}
     )
 
@@ -57,6 +64,54 @@ def calculate_date_from_months(months_back: int) -> str:
     # Use +00:00 format (with colon) as used in the working hardcoded query
     return target_date.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
+async def get_series_details(series_ids: list[str]):
+    """Get detailed series data including player stats"""
+    client = get_series_client()
+
+    tasks = []
+    for series_id in series_ids:
+        tasks.append(client.get_completed_series_details(id=series_id))
+
+    try:
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"DEBUG: Got {len(responses)} responses from API")
+
+        # Filter out exceptions and None responses
+        valid_responses = []
+        for i, response in enumerate(responses):
+            series_id = series_ids[i] if i < len(series_ids) else "unknown"
+
+            if isinstance(response, Exception):
+                print(f"DEBUG: Series {series_id} failed with exception: {response}")
+                continue  # Skip failed requests
+            elif response is None:
+                print(f"DEBUG: Series {series_id} returned None")
+                continue  # Skip None responses
+            else:
+                print(f"DEBUG: Series {series_id} response type: {type(response)}")
+                print(f"DEBUG: Series {series_id} has series_state attr: {hasattr(response, 'series_state')}")
+                if hasattr(response, 'series_state'):
+                    print(f"DEBUG: Series {series_id} series_state is None: {response.series_state is None}")
+                    if response.series_state:
+                        print(f"DEBUG: Series {series_id} has games: {len(response.series_state.games) if hasattr(response.series_state, 'games') else 'no games attr'}")
+
+                # Be more lenient - accept any response that isn't clearly broken
+                if response is not None and not isinstance(response, Exception):
+                    valid_responses.append(response)
+                    print(f"DEBUG: Series {series_id} accepted (even if no series_state)")
+                    # Debug: show what attributes the response has
+                    attrs = [attr for attr in dir(response) if not attr.startswith('_')]
+                    print(f"DEBUG: Series {series_id} attributes: {attrs}")
+                else:
+                    print(f"DEBUG: Series {series_id} rejected - None or exception")
+
+        print(f"DEBUG: Returning {len(valid_responses)} valid responses")
+        return valid_responses
+
+    except Exception as e:
+        print(f"Error getting series details: {e}")
+        return []
+
 
 # Streamlit UI
 st.title("Team & Series Lookup")
@@ -66,9 +121,11 @@ st.write("Search for a team and view their recent series")
 st.subheader("Step 1: Enter Opponent Name")
 team_name = st.text_input("Enter team name:", placeholder="e.g., LOUD, Cloud9, G2 Esports")
 
-# Initialize session state to store the team
+# Initialize session state to store the team and series
 if 'selected_team' not in st.session_state:
     st.session_state.selected_team = None
+if 'series_list' not in st.session_state:
+    st.session_state.series_list = None
 
 async def search_team():
     """Async function to search for a team"""
@@ -140,6 +197,8 @@ if st.session_state.selected_team:
             series_list = await fetch_recent_series(since_date, team.id)
 
             if series_list:
+                # Store series in session state
+                st.session_state.series_list = series_list
                 st.success(f"Found {len(series_list)} series!")
 
                 st.divider()
@@ -176,8 +235,229 @@ if st.session_state.selected_team:
                 st.error("No series data available.")
 
     # Search series button
-    if st.button("Find Series"):
+    if st.button("Scout Team"):
         asyncio.run(find_series())
+
+    # Analysis Section (appears when we have series data)
+    if st.session_state.series_list:
+        series_list = st.session_state.series_list
+
+        # Simple Analysis Section
+        st.divider()
+        st.subheader("📊 Basic Analysis")
+
+        # Cache the analysis result to avoid recomputing
+        @st.cache_data
+        def analyze_series_basic(_series_list):
+            """Basic analysis of series data"""
+            total_series = len(_series_list)
+            series_with_winners = sum(1 for s in _series_list if hasattr(s, 'winner') and s.winner)
+            series_with_teams = sum(1 for s in _series_list if hasattr(s, 'teams') and s.teams)
+
+            return {
+                'total_series': total_series,
+                'series_with_winners': series_with_winners,
+                'series_with_teams': series_with_teams,
+                'completion_rate': (series_with_winners / total_series * 100) if total_series > 0 else 0
+            }
+
+        # Cache detailed analysis with player stats
+        @st.cache_data
+        def analyze_player_weapons(_series_details, _target_team_name):
+            """Analyze player weapon preferences from detailed series data for target team only"""
+            from collections import defaultdict, Counter
+
+            player_weapons = defaultdict(Counter)  # player_name -> weapon -> total_kills
+            player_series_count = defaultdict(int)  # player_name -> series_played
+
+            for series in _series_details:
+                if not series.series_state or not series.series_state.games:
+                    continue
+
+                # Track which players we've seen in this series (only from target team)
+                series_players = set()
+
+                # Analyze each game in the series
+                for game in series.series_state.games:
+                    # Get weapon data from game-level player stats (more reliable)
+                    for team in game.teams:
+                        # Only process players from the target team (flexible matching)
+                        if hasattr(team, 'name') and (
+                            team.name == _target_team_name or
+                            team.name.startswith(_target_team_name) or
+                            _target_team_name in team.name
+                        ):
+                            for player in team.players:
+                                player_name = player.name
+                                series_players.add(player_name)
+
+                                # Collect weapon kills from game-level data
+                                if hasattr(player, 'weapon_kills'):
+                                    for weapon_kill in player.weapon_kills:
+                                        if weapon_kill.weapon_name and weapon_kill.count:
+                                            player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
+
+                    # Also check segment-level data for additional weapon info
+                    for segment in game.segments:
+                        for team in segment.teams:
+                            # Only process players from the target team (flexible matching)
+                            if hasattr(team, 'name') and (
+                                team.name == _target_team_name or
+                                team.name.startswith(_target_team_name) or
+                                _target_team_name in team.name
+                            ):
+                                for player in team.players:
+                                    player_name = player.name
+                                    series_players.add(player_name)
+
+                                    # Collect weapon kills from segment-level data
+                                    if hasattr(player, 'weapon_kills'):
+                                        for weapon_kill in player.weapon_kills:
+                                            if weapon_kill.weapon_name and weapon_kill.count:
+                                                player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
+
+                # Count series played for each player in this series
+                for player_name in series_players:
+                    player_series_count[player_name] += 1
+
+            # Calculate preferred weapons for each player
+            player_analysis = {}
+            for player_name, weapon_counts in player_weapons.items():
+                total_kills = sum(weapon_counts.values())
+                if total_kills > 0:
+                    # Get top 3 weapons
+                    top_weapons = weapon_counts.most_common(3)
+
+                    player_analysis[player_name] = {
+                        'series_played': player_series_count[player_name],
+                        'total_kills': total_kills,
+                        'preferred_weapon': top_weapons[0][0] if top_weapons else None,
+                        'preferred_weapon_kills': top_weapons[0][1] if top_weapons else 0,
+                        'weapon_breakdown': dict(top_weapons),
+                        'all_weapons': dict(weapon_counts)
+                    }
+
+            return {
+                'total_players_analyzed': len(player_analysis),
+                'player_analysis': player_analysis
+            }
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            if st.button("Run Basic Analysis", key="basic_analysis"):
+                with st.spinner("Analyzing series data..."):
+                    analysis = analyze_series_basic(series_list)
+
+                    st.metric("Total Series", analysis['total_series'])
+                    st.metric("Series with Winners", analysis['series_with_winners'])
+                    st.metric("Series with Teams", analysis['series_with_teams'])
+                    st.metric("Completion Rate", ".1f")
+
+                    st.success("Basic analysis complete!")
+
+                    # Show expandable details
+                    with st.expander("View Basic Analysis Details"):
+                        st.json(analysis)
+
+        with col2:
+            if st.button("Test API Connection", key="test_api"):
+                st.write("Testing basic API connection...")
+                series_ids = [str(s.id) for s in series_list if hasattr(s, 'id') and s.id]
+
+                if series_ids:
+                    try:
+                        # Test just one API call
+                        async def test_single():
+                            client = get_series_client()
+                            result = await client.get_completed_series_details(id=series_ids[0])
+                            return result
+
+                        result = asyncio.run(test_single())
+                        st.success("API call completed!")
+                        st.write(f"Response type: {type(result)}")
+
+                        if result:
+                            st.write("Response received with data")
+                            if hasattr(result, 'series_state'):
+                                st.write(f"Has series_state: {result.series_state is not None}")
+                            else:
+                                st.write("No series_state attribute")
+                        else:
+                            st.write("Response is None/empty")
+
+                    except Exception as e:
+                        st.error(f"API test failed: {str(e)}")
+                        import traceback
+                        st.code(traceback.format_exc())
+                else:
+                    st.error("No series IDs available for testing")
+
+            if st.button("Run Player Weapon Analysis", key="weapon_analysis"):
+                with st.spinner("Fetching detailed series data and analyzing player weapons..."):
+                    # Get series IDs and fetch detailed data
+                    series_ids = [str(s.id) for s in series_list if hasattr(s, 'id') and s.id]
+                    st.write(f"DEBUG: Requesting details for series IDs: {series_ids[:5]}")
+
+                    if series_ids:
+                        # Get detailed series data
+                        detailed_series = asyncio.run(get_series_details(series_ids[:5]))  # Limit to first 5 for performance
+                        st.write(f"DEBUG: Received {len(detailed_series)} detailed series responses")
+
+                        # Show debug info in UI
+                        with st.expander("🔍 Debug Info (API Responses)", expanded=True):
+                            st.write("**Series IDs requested:**", series_ids[:5])
+                            st.write(f"**Responses received:** {len(detailed_series)}")
+
+                            if len(detailed_series) == 0:
+                                st.warning("No valid responses received. Check terminal/console for detailed debug output.")
+
+                        if detailed_series:
+                            weapon_analysis = analyze_player_weapons(detailed_series, team.name)
+
+                            st.metric("Players Analyzed", weapon_analysis['total_players_analyzed'])
+                            st.success("Player weapon analysis complete!")
+
+                            # Show player weapon preferences
+                            if weapon_analysis['player_analysis']:
+                                st.subheader(f"🎯 {team.name} - Player Weapon Preferences")
+                                st.info(f"Showing weapon statistics for players from **{team.name}** only (the scouted team)")
+
+                                # Sort players by series played
+                                sorted_players = sorted(
+                                    weapon_analysis['player_analysis'].items(),
+                                    key=lambda x: x[1]['series_played'],
+                                    reverse=True
+                                )
+
+                                for player_name, stats in sorted_players[:10]:  # Show top 10 players
+                                    with st.expander(f"🎯 {player_name} (Series: {stats['series_played']})"):
+                                        col_a, col_b = st.columns(2)
+
+                                        with col_a:
+                                            st.metric("Preferred Weapon",
+                                                     stats['preferred_weapon'] or "Unknown")
+                                            st.metric("Kills with Preferred",
+                                                     stats['preferred_weapon_kills'])
+
+                                        with col_b:
+                                            st.metric("Total Kills", stats['total_kills'])
+                                            st.write("**Top Weapons:**")
+                                            for weapon, kills in list(stats['weapon_breakdown'].items())[:3]:
+                                                st.write(f"• {weapon}: {kills} kills")
+
+                                        # Show full weapon breakdown in expandable section
+                                        with st.expander("Full Weapon Breakdown"):
+                                            weapon_data = []
+                                            for weapon, kills in stats['all_weapons'].items():
+                                                weapon_data.append({"Weapon": weapon, "Kills": kills})
+
+                                            weapon_data.sort(key=lambda x: x['Kills'], reverse=True)
+                                            st.dataframe(weapon_data, use_container_width=True)
+                        else:
+                            st.error("No detailed series data available for weapon analysis")
+                    else:
+                        st.error("No valid series IDs found for weapon analysis")
 
 # Add some helpful information
 with st.sidebar:
@@ -188,6 +468,8 @@ with st.sidebar:
     st.write("1. Enter a team name and click 'Search Team'")
     st.write("2. Once found, select how many months back to search")
     st.write("3. Click 'Find Series' to see all matches")
+    st.write("4. Click 'Run Basic Analysis' for series overview")
+    st.write("5. Click 'Run Player Weapon Analysis' for scouted team's weapon preferences")
     
     st.subheader("Example Teams")
     st.code("LOUD\nFnatic\nT1\nG2 Esports")

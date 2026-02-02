@@ -13,12 +13,12 @@ def gql(q: str) -> str:
 
 class SeriesClient(AsyncBaseClient):
     async def get_completed_series_details(
-        self, **kwargs: Any
+        self, id: str, **kwargs: Any
     ) -> GetCompletedSeriesDetails:
         query = gql(
             """
-            query GetCompletedSeriesDetails {
-              seriesState(id: "2819695") {
+            query GetCompletedSeriesDetails($id: ID!) {
+              seriesState(id: $id) {
                 draftActions {
                   sequenceNumber
                   drafter {
@@ -140,7 +140,7 @@ class SeriesClient(AsyncBaseClient):
             }
             """
         )
-        variables: dict[str, object] = {}
+        variables: dict[str, object] = {"id": id}
         response = await self.execute(
             query=query,
             operation_name="GetCompletedSeriesDetails",
