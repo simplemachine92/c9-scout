@@ -25,3 +25,4 @@ starlette==0.50.0
 toml==0.10.2
 typing-inspection==0.4.2
 typing_extensions==4.15.0
+openai==1.54.4

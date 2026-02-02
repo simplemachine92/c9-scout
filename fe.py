@@ -6,10 +6,125 @@ from dotenv import load_dotenv
 from clients.central_client.client import CentralDbClient
 from clients.central_client.fragments import TeamFields, SeriesFields
 from clients.series_client.client import SeriesClient
+from openai import OpenAI, DefaultHttpxClient
+import httpx
 
 # Load environment variables
 load_dotenv()
 API_KEY = os.getenv("API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Initialize OpenAI client if key is available
+openai_client = None
+if OPENAI_API_KEY:
+    try:
+        # Use DefaultHttpxClient with explicit proxy=None to disable proxy auto-detection
+        http_client = DefaultHttpxClient(proxy=None)
+        openai_client = OpenAI(
+            api_key=OPENAI_API_KEY,
+            http_client=http_client
+        )
+    except Exception as e:
+        st.error(f"Failed to initialize OpenAI client: {str(e)}")
+        st.info("Check your OPENAI_API_KEY in the .env file and ensure you have sufficient OpenAI credits.")
+
+def format_analysis_for_llm(team, weapon_analysis, map_analysis, map_characters, opponent_impact, orb_priority, months_back):
+    """Format all analysis data into LLM-friendly text"""
+
+    sections = []
+
+    # Team Overview
+    total_kills = sum(stats['total_kills'] for stats in weapon_analysis['player_analysis'].values()) if weapon_analysis['player_analysis'] else 0
+    sections.append(f"""
+# {team.name} Performance Analysis
+
+## Overview
+- Analyzed data from the last {months_back} months
+- {len(weapon_analysis['player_analysis'])} players analyzed
+- {total_kills} total kills across all players
+- {map_analysis['total_actions']} map draft actions analyzed
+""")
+
+    # Player Preferences Section
+    if weapon_analysis['player_analysis']:
+        sections.append("""
+## Player Performance
+
+### Top Players by Series Played:
+""")
+        sorted_players = sorted(
+            weapon_analysis['player_analysis'].items(),
+            key=lambda x: x[1]['series_played'], reverse=True
+        )
+
+        for i, (player_name, stats) in enumerate(sorted_players[:10], 1):
+            sections.append(f"""
+{i}. **{player_name}**
+   - Series played: {stats['series_played']}
+   - Preferred weapon: {stats['preferred_weapon']} ({stats['preferred_weapon_kills']} kills)
+   - Total kills: {stats['total_kills']}
+   - Avg damage/round: {stats['avg_damage_dealt_per_round']:.1f}
+   - Headshot ratio: {stats['headshot_ratio']:.1f}%
+   - Calculated aggression: {stats['aggression_factor']:.2f} (lower = more aggressive)
+   - First bloods: {stats['first_bloods']}
+   - Target distribution: Head {stats['target_pct']['head']:.1f}%, Body {stats['target_pct']['body']:.1f}%, Leg {stats['target_pct']['leg']:.1f}%
+""")
+
+    # Map Preferences Section
+    if map_analysis['total_actions'] > 0:
+        sections.append("""
+## Map Strategy
+
+### Ban/Pick Patterns:
+""")
+        if map_analysis['most_banned_maps']:
+            sections.append("Most Banned Maps: " + ", ".join(f"{map_name} ({count} times)" for map_name, count in map_analysis['most_banned_maps']))
+        if map_analysis['most_picked_maps']:
+            sections.append("Most Picked Maps: " + ", ".join(f"{map_name} ({count} times)" for map_name, count in map_analysis['most_picked_maps']))
+
+        sections.append("\n### Win Rates by Map:")
+        for map_name, stats in map_analysis['sorted_win_rates']:
+            sections.append(f"- {map_name}: {stats['win_rate']:.1f}% win rate ({stats['wins']}/{stats['games']} games)")
+
+    # Character Analysis
+    if map_characters:
+        sections.append("""
+## Character Preferences by Map:
+""")
+        for map_name in sorted(map_characters.keys()):
+            chars = map_characters[map_name][:5]
+            if chars:
+                sections.append(f"- **{map_name}**: " + ", ".join(f"{char} ({count} picks)" for char, count in chars))
+
+    # Opponent Character Impact
+    if opponent_impact:
+        sections.append("""
+## Opponent Character Impact (Characters to Deny)
+
+### Most Impactful Characters When Opponent Plays Them:
+""")
+        for i, row in enumerate(opponent_impact[:10], 1):
+            sections.append(f"""
+{i}. **{row['character']}** ({row['games_played']} games analyzed)
+   - Avg kills/game when opponent plays this: {row['avg_kills_per_game']:.1f}
+   - Avg damage/round when opponent plays this: {row['avg_damage_per_round']:.0f}
+   - Best maps for this character: {', '.join(f'{map_name} ({avg_kills:.1f} avg kills)' for map_name, avg_kills, _ in row['best_maps'][:3])}
+""")
+
+    # Ultimate Orb Priority
+    if orb_priority["by_map"]:
+        sections.append("""
+## Ultimate Orb Priority
+
+### Who Captures Ultimate Orb by Map (Agent Ult Prioritization):
+""")
+        for map_name in sorted(orb_priority["by_map"].keys()):
+            chars = orb_priority["by_map"][map_name][:5]
+            if chars:
+                total_orb = sum(c for _, c in chars)
+                sections.append(f"- **{map_name}** ({total_orb} orb captures): " + ", ".join(f"{char} ({count})" for char, count in chars))
+
+    return "\n".join(sections)
 
 # Initialize the client
 def get_central_client():
@@ -755,6 +870,13 @@ if st.session_state.selected_team:
                     opponent_impact = analyze_opponent_character_impact(detailed_series, team.name, months_back)
                     orb_priority = analyze_ultimate_orb_priority(detailed_series, team.name, months_back)
 
+                    # Store analysis results in session state for LLM chat
+                    st.session_state.weapon_analysis = weapon_analysis
+                    st.session_state.map_analysis = map_analysis
+                    st.session_state.map_characters = map_characters
+                    st.session_state.opponent_impact = opponent_impact
+                    st.session_state.orb_priority = orb_priority
+
                     # Show team performance analysis
                     if (weapon_analysis['player_analysis'] or map_analysis['total_actions'] > 0
                             or orb_priority["by_map"] or opponent_impact):
@@ -938,6 +1060,81 @@ if st.session_state.selected_team:
                     st.error("Unable to fetch detailed series data for weapon analysis")
             else:
                 st.error("No valid series IDs found for weapon analysis")
+
+# LLM Chat Interface (only show if we have analysis data and OpenAI key)
+if (st.session_state.get('series_list') and openai_client and
+    (st.session_state.get('weapon_analysis', {}).get('player_analysis') or
+     st.session_state.get('map_analysis', {}).get('total_actions', 0) > 0 or
+     st.session_state.get('opponent_impact') or
+     st.session_state.get('orb_priority', {}).get("by_map"))):
+
+    st.divider()
+    st.header("🤖 Ask About Team Performance")
+
+    # Initialize chat messages if not exists
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = []
+
+    # Display chat history
+    for message in st.session_state.chat_messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+
+    # Chat input
+    if prompt := st.chat_input("Ask anything about the team's performance..."):
+        if not prompt.strip():
+            st.warning("Please enter a question.")
+        else:
+            # Add user message to history
+            st.session_state.chat_messages.append({"role": "user", "content": prompt})
+
+            try:
+                # Format analysis data for LLM
+                context = format_analysis_for_llm(
+                    team,
+                    st.session_state.weapon_analysis,
+                    st.session_state.map_analysis,
+                    st.session_state.map_characters,
+                    st.session_state.opponent_impact,
+                    st.session_state.orb_priority,
+                    months_back
+                )
+
+                # Create LLM prompt
+                system_prompt = f"""
+                You are an expert Valorant esports analyst. Use the team performance data below to answer questions about {team.name}'s performance.
+
+                Provide specific insights backed by the data. Be concise but informative. Use numbers and percentages when relevant.
+                If asked about comparisons, rankings, or recommendations, base them on the actual performance metrics.
+                If the question cannot be answered from the data, say so clearly.
+
+                Team Data:
+                {context}
+                """
+
+                # Query OpenAI
+                with st.spinner("Analyzing..."):
+                    response = openai_client.chat.completions.create(
+                        model="gpt-4o-mini",  # Using cost-effective model
+                        messages=[
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=1000,
+                        temperature=0.3
+                    )
+
+                ai_response = response.choices[0].message.content
+
+                # Add AI response to history
+                st.session_state.chat_messages.append({"role": "assistant", "content": ai_response})
+
+                # Rerun to display the new messages
+                st.rerun()
+
+            except Exception as e:
+                st.error(f"Error querying AI: {str(e)}")
+                st.info("Make sure your OPENAI_API_KEY is set correctly in the .env file and you have credits in your OpenAI account.")
 
 # Add some helpful information
 with st.sidebar:
