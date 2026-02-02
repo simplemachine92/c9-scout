@@ -335,6 +335,8 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
     player_kills_by_side = defaultdict(_side_dict)
     # player_name -> {'total_damage_dealt': int, 'rounds': int} (per-round from segments)
     player_damage_dealt = defaultdict(lambda: {'total_damage_dealt': 0, 'rounds': 0})
+    # player_name -> {'total_damage_taken': int, 'rounds': int} (per-round from segments)
+    player_damage_taken = defaultdict(lambda: {'total_damage_taken': 0, 'rounds': 0})
     # player_name -> {'head': int, 'body': int, 'leg': int} damage by target from segments
     player_damage_by_target = defaultdict(lambda: {'head': 0, 'body': 0, 'leg': 0})
     # player_name -> first_blood_count (number of rounds they got first kill)
@@ -426,6 +428,10 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                                 if hasattr(player, 'damage_dealt'):
                                     player_damage_dealt[player_name]['total_damage_dealt'] += player.damage_dealt
                                     player_damage_dealt[player_name]['rounds'] += 1
+                                # Track damage taken per round (segment-level has damageTaken per round)
+                                if hasattr(player, 'damage_taken'):
+                                    player_damage_taken[player_name]['total_damage_taken'] += player.damage_taken
+                                    player_damage_taken[player_name]['rounds'] += 1
                                 # Track damage by target (head/body/leg) for headshot ratio and target %
                                 for t in getattr(player, 'damage_dealt_targets', []) or []:
                                     target_name = (getattr(getattr(t, 'target', None), 'name', None) or '').strip().lower()
@@ -462,6 +468,16 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
             rounds_with_dmg = dmg['rounds']
             avg_damage_dealt_per_round = round(total_dmg / rounds_with_dmg, 1) if rounds_with_dmg > 0 else 0.0
 
+            # Damage taken (per-round from segments)
+            dmg_taken = player_damage_taken[player_name]
+            total_dmg_taken = dmg_taken['total_damage_taken']
+            rounds_with_dmg_taken = dmg_taken['rounds']
+            avg_damage_taken_per_round = round(total_dmg_taken / rounds_with_dmg_taken, 1) if rounds_with_dmg_taken > 0 else 0.0
+
+            # Calculated aggression factor: ratio of damage taken to damage dealt
+            # Lower ratio = more aggressive (deals more than takes), higher ratio = less aggressive
+            aggression_factor = round(total_dmg_taken / total_dmg, 2) if total_dmg > 0 else 0.0
+
             # Headshot ratio and target distribution (head/body/leg % of damage)
             by_target = player_damage_by_target[player_name]
             damage_to_head = by_target['head']
@@ -490,6 +506,10 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                 'total_damage_dealt': total_dmg,
                 'rounds_with_damage_data': rounds_with_dmg,
                 'avg_damage_dealt_per_round': avg_damage_dealt_per_round,
+                'total_damage_taken': total_dmg_taken,
+                'rounds_with_damage_taken_data': rounds_with_dmg_taken,
+                'avg_damage_taken_per_round': avg_damage_taken_per_round,
+                'aggression_factor': aggression_factor,
                 'headshot_ratio': headshot_ratio,
                 'target_pct': target_pct,
                 'first_bloods': player_first_bloods[player_name],
@@ -809,6 +829,9 @@ if st.session_state.selected_team:
                                              stats['preferred_weapon_kills'])
                                     st.metric("Avg Damage Dealt / Round",
                                              stats.get('avg_damage_dealt_per_round', 0))
+                                    st.metric("Calculated Aggression",
+                                             f"{stats.get('aggression_factor', 0):.2f}",
+                                             help="Ratio of damage taken vs damage dealt. Lower = more aggressive (deals > takes), Higher = less aggressive (takes > deals)")
                                     if stats.get('rounds_with_damage_data'):
                                         st.caption(f"Over {stats['rounds_with_damage_data']} rounds")
 
