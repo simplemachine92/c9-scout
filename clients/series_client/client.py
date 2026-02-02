@@ -122,6 +122,10 @@ class SeriesClient(AsyncBaseClient):
                         name
                         id
                       }
+                      position {
+                        x
+                        y
+                      }
                       inventory {
                         items {
                           name

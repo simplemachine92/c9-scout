@@ -253,6 +253,7 @@ class GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayers(BaseModel):
     character: Optional[
         "GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersCharacter"
     ]
+    position: Optional["GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersPosition"]
     inventory: "GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersInventory"
     kills: int
     kill_assists_given: int = Field(alias="killAssistsGiven")
@@ -268,6 +269,11 @@ class GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayers(BaseModel):
 class GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersCharacter(BaseModel):
     name: str
     id: str
+
+
+class GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersPosition(BaseModel):
+    x: float
+    y: float
 
 
 class GetCompletedSeriesDetailsSeriesStateGamesTeamsPlayersInventory(BaseModel):

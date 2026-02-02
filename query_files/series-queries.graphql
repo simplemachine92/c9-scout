@@ -98,6 +98,10 @@ query GetCompletedSeriesDetails($id: ID!) {
             name
             id
           }
+          position {
+            x
+            y
+          }
           inventory {
             items {
               name
