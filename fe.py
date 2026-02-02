@@ -87,6 +87,10 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
 
     player_weapons = defaultdict(Counter)  # player_name -> weapon -> total_kills
     player_series_count = defaultdict(int)  # player_name -> series_played
+    # player_name -> side -> {'kills': int, 'rounds': int}
+    def _side_dict():
+        return defaultdict(lambda: {'kills': 0, 'rounds': 0})
+    player_kills_by_side = defaultdict(_side_dict)
 
     for series in _series_details:
         # Only analyze Valorant series
@@ -146,7 +150,7 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                                     if weapon_kill.weapon_name and weapon_kill.count:
                                         player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
 
-            # Also check segment-level data for additional weapon info
+            # Also check segment-level data for additional weapon info and side-based kills
             for segment in game.segments:
                 for team in segment.teams:
                     if hasattr(team, 'name') and (
@@ -154,16 +158,24 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
                         team.name.startswith(_target_team_name) or
                         _target_team_name in team.name
                     ):
+                        side = (getattr(team, 'side', None) or '').lower()
+                        if side not in ('attacker', 'defender'):
+                            side = None
+
                         for player in team.players:
                             player_name = player.name
-                            # Only collect weapon data for players who participated in this series
+                            # Only collect for players who participated in this series
                             if player_name in series_players:
                                 if hasattr(player, 'weapon_kills'):
                                     for weapon_kill in player.weapon_kills:
-                                        if weapon_kill.weapon_name and weapon_kill.weapon_name:
+                                        if weapon_kill.weapon_name and weapon_kill.count:
                                             player_weapons[player_name][weapon_kill.weapon_name] += weapon_kill.count
+                                # Track kills by side (segment-level has side per round)
+                                if side and hasattr(player, 'kills'):
+                                    player_kills_by_side[player_name][side]['kills'] += player.kills
+                                    player_kills_by_side[player_name][side]['rounds'] += 1
 
-    # Calculate preferred weapons for each player
+    # Calculate preferred weapons and side stats for each player
     player_analysis = {}
     for player_name, weapon_counts in player_weapons.items():
         total_kills = sum(weapon_counts.values())
@@ -171,13 +183,26 @@ def analyze_player_weapons(_series_details, _target_team_name, _months_back):
             # Get top 3 weapons
             top_weapons = weapon_counts.most_common(3)
 
+            # Average kills per side
+            side_stats = {}
+            for side in ('attacker', 'defender'):
+                data = player_kills_by_side[player_name][side]
+                kills = data['kills']
+                rounds = data['rounds']
+                side_stats[side] = {
+                    'kills': kills,
+                    'rounds': rounds,
+                    'avg_kills': round(kills / rounds, 2) if rounds > 0 else 0.0
+                }
+
             player_analysis[player_name] = {
                 'series_played': player_series_count[player_name],
                 'total_kills': total_kills,
                 'preferred_weapon': top_weapons[0][0] if top_weapons else None,
                 'preferred_weapon_kills': top_weapons[0][1] if top_weapons else 0,
                 'weapon_breakdown': dict(top_weapons),
-                'all_weapons': dict(weapon_counts)
+                'all_weapons': dict(weapon_counts),
+                'kills_by_side': side_stats
             }
 
     return {
@@ -458,6 +483,20 @@ if st.session_state.selected_team:
                                     st.write("**Top Weapons:**")
                                     for weapon, kills in list(stats['weapon_breakdown'].items())[:3]:
                                         st.write(f"• {weapon}: {kills} kills")
+
+                                # Average kills per side (attacker / defender)
+                                if stats.get('kills_by_side'):
+                                    st.subheader("📊 Kills by Side")
+                                    side_data = stats['kills_by_side']
+                                    side_col1, side_col2 = st.columns(2)
+                                    with side_col1:
+                                        att = side_data.get('attacker', {})
+                                        st.metric("Attacker — Avg Kills/Round", att.get('avg_kills', 0))
+                                        st.caption(f"{att.get('kills', 0)} kills in {att.get('rounds', 0)} rounds")
+                                    with side_col2:
+                                        def_ = side_data.get('defender', {})
+                                        st.metric("Defender — Avg Kills/Round", def_.get('avg_kills', 0))
+                                        st.caption(f"{def_.get('kills', 0)} kills in {def_.get('rounds', 0)} rounds")
 
                                 # Show full weapon breakdown in expandable section
                                 with st.expander("Full Weapon Breakdown"):
