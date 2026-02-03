@@ -35,7 +35,7 @@ def fix_nullable_fields(file_path):
 
 def main():
     """Fix all generated client files."""
-    client_dir = "clients/central_client"
+    client_dir = "../clients/central_client"
     if not os.path.exists(client_dir):
         print(f"Directory {client_dir} not found")
         return

@@ -20,7 +20,7 @@ def run_command(cmd):
 def main():
     """Generate client and fix nullable fields."""
     # Activate virtual environment
-    venv_path = "environment/bin/activate"
+    venv_path = "../environment/bin/activate"
     if os.path.exists(venv_path):
         print("Activating virtual environment...")
         # We need to source the environment, but subprocess doesn't support source
